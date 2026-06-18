@@ -951,6 +951,79 @@
         padding-left: 0;
       }
     }
+
+    @media (max-width: 480px) {
+      .record {
+        grid-template-columns: max-content max-content 1fr max-content max-content;
+        column-gap: 8px;
+        row-gap: 4px;
+        padding: 10px 0;
+      }
+
+      .record-time {
+        grid-column: 1;
+        grid-row: 1;
+      }
+
+      .record-duration {
+        grid-column: 2;
+        grid-row: 1;
+        line-height: 2;
+        text-align: left;
+      }
+
+      .edit-button {
+        grid-column: 4;
+        grid-row: 1;
+      }
+
+      .delete-button {
+        grid-column: 5;
+        grid-row: 1;
+      }
+
+      .edit-button,
+      .delete-button {
+        align-self: start;
+        opacity: 1;
+        padding: 2px 0;
+        color: var(--muted);
+        font-size: 13px;
+        white-space: nowrap;
+      }
+
+      .record-text {
+        grid-column: 1 / -1;
+        grid-row: 2;
+        min-width: 0;
+        line-height: 1.5;
+      }
+
+      .record-title {
+        color: var(--text);
+        font-size: 1em;
+        font-weight: normal;
+        line-height: 1.5;
+      }
+
+      .record-note {
+        margin-top: 4px;
+      }
+
+      .label-stack {
+        grid-column: 1 / -1;
+        grid-row: 3;
+        justify-content: flex-start;
+        max-width: none;
+        margin-top: 0;
+      }
+
+      .category-picker,
+      .tag-picker,
+      .edit-panel {
+        grid-column: 1 / -1;
+      }
+    }
   </style>
 </head>
 <body>
