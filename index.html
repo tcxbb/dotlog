@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Dotlog</title>
   <link rel="manifest" href="manifest.json">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -183,7 +183,6 @@
       gap: 12px;
       margin: 0 0 18px 38px;
       padding-bottom: 12px;
-      border-bottom: 1px solid var(--border);
       color: var(--muted);
       font-size: 0.85em;
       font-variant-numeric: tabular-nums;
@@ -255,12 +254,17 @@
     }
 
     .entry-form {
-      display: grid;
-      grid-template-columns: 1fr auto auto;
-      gap: 10px;
+      display: block;
       padding: 18px 0;
       border-top: 1px solid var(--border);
       border-bottom: 1px solid var(--border);
+    }
+
+    .entry-row {
+      display: flex;
+      align-items: stretch;
+      gap: 10px;
+      width: 100%;
     }
 
     .entry-form.is-hidden {
@@ -268,6 +272,7 @@
     }
 
     .entry-input {
+      flex: 1;
       width: 100%;
       min-width: 0;
       border: 1px solid var(--border);
@@ -305,8 +310,10 @@
       border-radius: 6px;
       background: transparent;
       color: var(--muted);
-      min-width: 42px;
-      padding: 0 12px;
+      width: 44px;
+      min-width: 44px;
+      padding: 0;
+      font-size: 1.2em;
       cursor: pointer;
     }
 
@@ -317,7 +324,7 @@
     }
 
     .split-hint {
-      grid-column: 1 / -1;
+      margin-top: 8px;
       color: var(--muted);
       font-size: 13px;
       line-height: 1.5;
@@ -335,7 +342,7 @@
     }
 
     .backfill-panel {
-      grid-column: 1 / -1;
+      margin-top: 10px;
     }
 
     .date-fields {
@@ -1058,15 +1065,6 @@
         padding-top: 32px;
       }
 
-      .entry-form {
-        grid-template-columns: 1fr;
-      }
-
-      .backfill-button,
-      .submit-button {
-        height: 44px;
-      }
-
       .outline-button {
         width: 100%;
       }
@@ -1249,9 +1247,11 @@
     </header>
 
     <form class="entry-form" id="entryForm">
-      <input class="entry-input" id="entryInput" type="text" placeholder="发生了什么？" autocomplete="off">
-      <button class="backfill-button" id="backfillToggle" type="button" title="补录" aria-label="打开补录面板">⊕</button>
-      <button class="submit-button" type="submit">记录</button>
+      <div class="entry-row">
+        <input class="entry-input" id="entryInput" type="text" placeholder="发生了什么？" autocomplete="off">
+        <button class="submit-button" type="submit">记录</button>
+        <button class="backfill-button" id="backfillToggle" type="button" title="补录" aria-label="打开补录面板">+</button>
+      </div>
       <div class="split-hint is-hidden" id="splitHint">检测到加号 · 拆分格式：主事件 + 次事件 时长（分钟） 例：看书 + 跑步 30</div>
       <div class="backfill-panel is-hidden" id="backfillPanel">
         <label class="form-line">

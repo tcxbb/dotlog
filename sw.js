@@ -1,4 +1,4 @@
-const CACHE_NAME = "dotlog-v0.6.6-reimport-fix";
+const CACHE_NAME = "dotlog-v0.6.7";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (event) => {
