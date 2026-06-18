@@ -792,10 +792,16 @@
       white-space: nowrap;
     }
 
-    .calendar-import-button.is-imported {
-      border-color: transparent;
-      color: var(--accent) !important;
-      cursor: default;
+    .calendar-import-actions {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      white-space: nowrap;
+    }
+
+    .calendar-import-status {
+      color: var(--accent);
+      font-size: 13px;
     }
 
     .settings-view {
@@ -3262,15 +3268,33 @@
       return `${formatDateKey(viewedDate)}::${category}`;
     }
 
-    function triggerCalendarImport(category, events, button) {
-      importedCalendarCategories.add(calendarImportKey(category));
-      button.classList.add("is-imported");
-      button.textContent = "✓ 已导入";
-      button.disabled = true;
-
+    function navigateToCalendarImport(events) {
       const icsContent = buildIcsContent(events);
       const dataUri = `data:text/calendar;charset=utf-8,${encodeURIComponent(icsContent)}`;
       window.location.href = dataUri;
+    }
+
+    function renderImportedCalendarActions(category, events, actions) {
+      const status = document.createElement("span");
+      status.className = "calendar-import-status";
+      status.textContent = "✓ 已导入";
+
+      const retryButton = document.createElement("button");
+      retryButton.className = "calendar-import-button";
+      retryButton.type = "button";
+      retryButton.style.color = categoryColor(category);
+      retryButton.textContent = "重新导入";
+      retryButton.addEventListener("click", () => {
+        navigateToCalendarImport(events);
+      });
+
+      actions.replaceChildren(status, retryButton);
+    }
+
+    function triggerCalendarImport(category, events, actions) {
+      importedCalendarCategories.add(calendarImportKey(category));
+      renderImportedCalendarActions(category, events, actions);
+      navigateToCalendarImport(events);
     }
 
     function renderCalendarImportPanel(eventsByCategory) {
@@ -3314,23 +3338,24 @@
         count.className = "calendar-import-count";
         count.textContent = `${events.length}个事件`;
 
-        const importButton = document.createElement("button");
-        importButton.className = "calendar-import-button";
-        importButton.type = "button";
-        importButton.style.color = categoryColor(category);
+        const importActions = document.createElement("div");
+        importActions.className = "calendar-import-actions";
 
         if (importedCalendarCategories.has(calendarImportKey(category))) {
-          importButton.classList.add("is-imported");
-          importButton.textContent = "✓ 已导入";
-          importButton.disabled = true;
+          renderImportedCalendarActions(category, events, importActions);
         } else {
+          const importButton = document.createElement("button");
+          importButton.className = "calendar-import-button";
+          importButton.type = "button";
+          importButton.style.color = categoryColor(category);
           importButton.textContent = "→ 导入";
           importButton.addEventListener("click", () => {
-            triggerCalendarImport(category, events, importButton);
+            triggerCalendarImport(category, events, importActions);
           });
+          importActions.append(importButton);
         }
 
-        row.append(categoryCell, count, importButton);
+        row.append(categoryCell, count, importActions);
         list.append(row);
       });
 
