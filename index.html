@@ -94,6 +94,7 @@
 
     .calendar-menu-wrap {
       position: relative;
+      z-index: 9999;
       display: inline-grid;
     }
 
@@ -101,7 +102,7 @@
       position: absolute;
       top: 34px;
       right: 0;
-      z-index: 30;
+      z-index: 9999;
       width: 168px;
       overflow: hidden;
       border: 1px solid var(--border);
@@ -122,6 +123,7 @@
       padding: 10px 12px;
       text-align: left;
       cursor: pointer;
+      touch-action: manipulation;
     }
 
     .calendar-menu-item + .calendar-menu-item {
@@ -3575,9 +3577,11 @@
       event.stopPropagation();
     });
 
-    exportIcs.addEventListener("click", () => {
+    exportIcs.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
       toggleCalendarMenu();
-    });
+    }, true);
 
     importCalendarOption.addEventListener("click", () => {
       closeCalendarMenu();

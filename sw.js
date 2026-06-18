@@ -1,4 +1,4 @@
-const CACHE_NAME = "dotlog-v0.6.6";
+const CACHE_NAME = "dotlog-v0.6.6-calendar-menu-fix";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (event) => {
