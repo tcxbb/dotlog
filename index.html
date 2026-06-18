@@ -92,6 +92,51 @@
       color: var(--text);
     }
 
+    .calendar-menu-wrap {
+      position: relative;
+      display: inline-grid;
+    }
+
+    .calendar-menu {
+      position: absolute;
+      top: 34px;
+      right: 0;
+      z-index: 30;
+      width: 168px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #FFFFFF;
+      box-shadow: 0 10px 28px rgba(26, 26, 26, 0.12);
+    }
+
+    .calendar-menu-item {
+      display: grid;
+      grid-template-columns: 24px 1fr;
+      gap: 8px;
+      align-items: center;
+      width: 100%;
+      border: 0;
+      background: transparent;
+      color: var(--text);
+      padding: 10px 12px;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .calendar-menu-item + .calendar-menu-item {
+      border-top: 1px solid var(--border);
+    }
+
+    .calendar-menu-item:hover {
+      background: #F0EDEA;
+    }
+
+    .calendar-menu-icon {
+      color: var(--muted);
+      text-align: center;
+    }
+
     .is-hidden {
       display: none !important;
     }
@@ -643,6 +688,114 @@
       margin-top: 14px;
     }
 
+    .calendar-import-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      background: rgba(26, 26, 26, 0.24);
+    }
+
+    .calendar-import-panel {
+      width: min(100%, 460px);
+      max-height: min(82vh, 620px);
+      overflow-y: auto;
+      border-radius: 8px;
+      background: #FFFFFF;
+      box-shadow: 0 18px 48px rgba(26, 26, 26, 0.18);
+      padding: 20px;
+    }
+
+    .calendar-import-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 12px;
+    }
+
+    .calendar-import-title {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .calendar-import-close {
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      padding: 2px 4px;
+      font-size: 20px;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .calendar-import-copy,
+    .calendar-import-note {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .calendar-import-copy {
+      margin: 0 0 14px;
+    }
+
+    .calendar-import-note {
+      margin: 14px 0 0;
+      font-size: 0.8em;
+    }
+
+    .calendar-import-list {
+      display: grid;
+      border-top: 1px solid var(--border);
+    }
+
+    .calendar-import-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .calendar-import-category {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .calendar-import-swatch {
+      width: 10px;
+      height: 10px;
+      flex: 0 0 10px;
+      border-radius: 999px;
+    }
+
+    .calendar-import-count {
+      color: var(--muted);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .calendar-import-button {
+      border: 1px solid currentColor;
+      border-radius: 6px;
+      background: transparent;
+      padding: 5px 9px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .calendar-import-button.is-imported {
+      border-color: transparent;
+      color: var(--accent) !important;
+      cursor: default;
+    }
+
     .settings-view {
       padding-top: 4px;
     }
@@ -1041,16 +1194,28 @@
               <line x1="8" y1="3" x2="8" y2="7"/>
             </svg>
           </button>
-          <button class="icon-button" id="exportIcs" type="button" title="导出 .ics 文件" aria-label="导出 .ics 文件">
-            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-              <rect x="3" y="4" width="14" height="13" rx="2"/>
-              <line x1="3" y1="8" x2="17" y2="8"/>
-              <line x1="7" y1="2" x2="7" y2="6"/>
-              <line x1="13" y1="2" x2="13" y2="6"/>
-              <line x1="10" y1="11" x2="10" y2="15"/>
-              <polyline points="7,13 10,16 13,13"/>
-            </svg>
-          </button>
+          <span class="calendar-menu-wrap" id="calendarMenuWrap">
+            <button class="icon-button" id="exportIcs" type="button" title="日历导入与导出" aria-label="打开日历菜单" aria-expanded="false">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <rect x="3" y="4" width="14" height="13" rx="2"/>
+                <line x1="3" y1="8" x2="17" y2="8"/>
+                <line x1="7" y1="2" x2="7" y2="6"/>
+                <line x1="13" y1="2" x2="13" y2="6"/>
+                <line x1="10" y1="11" x2="10" y2="15"/>
+                <polyline points="7,13 10,16 13,13"/>
+              </svg>
+            </button>
+            <span class="calendar-menu is-hidden" id="calendarMenu">
+              <button class="calendar-menu-item" id="importCalendarOption" type="button">
+                <span class="calendar-menu-icon" aria-hidden="true">📅</span>
+                <span>导入日历</span>
+              </button>
+              <button class="calendar-menu-item" id="exportIcsOption" type="button">
+                <span class="calendar-menu-icon" aria-hidden="true">↓</span>
+                <span>导出 .ics</span>
+              </button>
+            </span>
+          </span>
           <button class="settings-button" id="settingsButton" type="button" aria-label="分类与标签管理">⚙️</button>
         </div>
       </div>
@@ -1115,6 +1280,10 @@
 
     <section id="recordsArea" aria-live="polite"></section>
     <section class="settings-view is-hidden" id="settingsView"></section>
+
+    <div class="calendar-import-overlay is-hidden" id="calendarImportOverlay" role="dialog" aria-modal="true" aria-labelledby="calendarImportTitle">
+      <section class="calendar-import-panel" id="calendarImportPanel"></section>
+    </div>
   </main>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -1135,6 +1304,12 @@
     const tableTools = document.querySelector("#tableTools");
     const tableToggle = document.querySelector("#tableToggle");
     const exportIcs = document.querySelector("#exportIcs");
+    const calendarMenuWrap = document.querySelector("#calendarMenuWrap");
+    const calendarMenu = document.querySelector("#calendarMenu");
+    const importCalendarOption = document.querySelector("#importCalendarOption");
+    const exportIcsOption = document.querySelector("#exportIcsOption");
+    const calendarImportOverlay = document.querySelector("#calendarImportOverlay");
+    const calendarImportPanel = document.querySelector("#calendarImportPanel");
     const exportStatus = document.querySelector("#exportStatus");
     const tableArea = document.querySelector("#tableArea");
     const recordsArea = document.querySelector("#recordsArea");
@@ -1172,6 +1347,7 @@
     let applyingRemoteData = false;
     let syncTimer = null;
     let syncInProgress = false;
+    const importedCalendarCategories = new Set();
     let syncStatus = {
       state: "unconfigured",
       message: "未配置",
@@ -2257,6 +2433,8 @@
       editingRecordIndex = null;
       editDraft = null;
       closeDatePicker();
+      closeCalendarMenu();
+      closeCalendarImportPanel();
       pageHeader.classList.add("is-hidden");
       entryForm.classList.add("is-hidden");
       tableTools.classList.add("is-hidden");
@@ -3061,6 +3239,129 @@
       ].join("\r\n");
     }
 
+    function closeCalendarMenu() {
+      calendarMenu.classList.add("is-hidden");
+      exportIcs.setAttribute("aria-expanded", "false");
+    }
+
+    function toggleCalendarMenu() {
+      const opening = calendarMenu.classList.contains("is-hidden");
+      calendarMenu.classList.toggle("is-hidden", !opening);
+      exportIcs.setAttribute("aria-expanded", String(opening));
+      if (opening) closeDatePicker();
+    }
+
+    function closeCalendarImportPanel() {
+      calendarImportOverlay.classList.add("is-hidden");
+      calendarImportPanel.replaceChildren();
+    }
+
+    function calendarImportKey(category) {
+      return `${formatDateKey(viewedDate)}::${category}`;
+    }
+
+    function triggerCalendarImport(category, events, button) {
+      importedCalendarCategories.add(calendarImportKey(category));
+      button.classList.add("is-imported");
+      button.textContent = "✓ 已导入";
+      button.disabled = true;
+
+      const icsContent = buildIcsContent(events);
+      const dataUri = `data:text/calendar;charset=utf-8,${encodeURIComponent(icsContent)}`;
+      window.location.href = dataUri;
+    }
+
+    function renderCalendarImportPanel(eventsByCategory) {
+      const head = document.createElement("div");
+      head.className = "calendar-import-head";
+
+      const title = document.createElement("h2");
+      title.className = "calendar-import-title";
+      title.id = "calendarImportTitle";
+      title.textContent = "导入日历";
+
+      const closeButton = document.createElement("button");
+      closeButton.className = "calendar-import-close";
+      closeButton.type = "button";
+      closeButton.textContent = "×";
+      closeButton.setAttribute("aria-label", "关闭导入日历面板");
+      closeButton.addEventListener("click", closeCalendarImportPanel);
+      head.append(title, closeButton);
+
+      const copy = document.createElement("p");
+      copy.className = "calendar-import-copy";
+      copy.textContent = "点击每个分类，逐个导入到日历";
+
+      const list = document.createElement("div");
+      list.className = "calendar-import-list";
+
+      Object.entries(eventsByCategory).forEach(([category, events]) => {
+        const row = document.createElement("div");
+        row.className = "calendar-import-row";
+
+        const categoryCell = document.createElement("div");
+        categoryCell.className = "calendar-import-category";
+        const swatch = document.createElement("span");
+        swatch.className = "calendar-import-swatch";
+        swatch.style.backgroundColor = categoryColor(category);
+        const categoryName = document.createElement("span");
+        categoryName.textContent = category;
+        categoryCell.append(swatch, categoryName);
+
+        const count = document.createElement("span");
+        count.className = "calendar-import-count";
+        count.textContent = `${events.length}个事件`;
+
+        const importButton = document.createElement("button");
+        importButton.className = "calendar-import-button";
+        importButton.type = "button";
+        importButton.style.color = categoryColor(category);
+
+        if (importedCalendarCategories.has(calendarImportKey(category))) {
+          importButton.classList.add("is-imported");
+          importButton.textContent = "✓ 已导入";
+          importButton.disabled = true;
+        } else {
+          importButton.textContent = "→ 导入";
+          importButton.addEventListener("click", () => {
+            triggerCalendarImport(category, events, importButton);
+          });
+        }
+
+        row.append(categoryCell, count, importButton);
+        list.append(row);
+      });
+
+      const note = document.createElement("p");
+      note.className = "calendar-import-note";
+      note.textContent = "在 iPhone 上使用效果最佳";
+
+      calendarImportPanel.replaceChildren(head, copy, list, note);
+    }
+
+    function openCalendarImportPanel() {
+      const records = loadRecords(viewedDate);
+
+      if (records.length < 2) {
+        alert("至少需要 2 条记录才能导入");
+        return;
+      }
+
+      if (!records.some((record) => record.category)) {
+        alert("请先为至少一条记录选择分类");
+        return;
+      }
+
+      const { eventsByCategory, eventCount } = buildCalendarEvents(records, viewedDate);
+      if (eventCount === 0) {
+        alert("请先为至少一条记录选择分类");
+        return;
+      }
+
+      renderCalendarImportPanel(eventsByCategory);
+      calendarImportOverlay.classList.remove("is-hidden");
+    }
+
     async function exportIcsFiles() {
       const records = loadRecords(viewedDate);
 
@@ -3270,8 +3571,28 @@
       render();
     });
 
+    calendarMenuWrap.addEventListener("click", (event) => {
+      event.stopPropagation();
+    });
+
     exportIcs.addEventListener("click", () => {
+      toggleCalendarMenu();
+    });
+
+    importCalendarOption.addEventListener("click", () => {
+      closeCalendarMenu();
+      openCalendarImportPanel();
+    });
+
+    exportIcsOption.addEventListener("click", () => {
+      closeCalendarMenu();
       exportIcsFiles();
+    });
+
+    calendarImportOverlay.addEventListener("click", (event) => {
+      if (event.target === calendarImportOverlay) {
+        closeCalendarImportPanel();
+      }
     });
 
     entryInput.addEventListener("input", updateSplitHint);
@@ -3320,6 +3641,7 @@
 
     dateText.addEventListener("click", (event) => {
       event.stopPropagation();
+      closeCalendarMenu();
       if (datePicker.classList.contains("is-hidden")) {
         openDatePicker();
       } else {
@@ -3337,6 +3659,14 @@
 
     document.addEventListener("click", () => {
       closeDatePicker();
+      closeCalendarMenu();
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        closeCalendarMenu();
+        closeCalendarImportPanel();
+      }
     });
 
     prevDate.addEventListener("click", () => changeViewedDate(-1));
