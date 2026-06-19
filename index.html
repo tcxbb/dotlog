@@ -615,17 +615,90 @@
       position: relative;
       overflow: hidden;
       display: grid;
-      grid-template-columns: 76px 5.5em minmax(0, 1fr) auto;
-      gap: 12px;
+      grid-template-columns: 4px minmax(0, 1fr) auto;
+      column-gap: 12px;
       align-items: start;
-      min-height: 38px;
-      padding: 7px 0;
-      border-bottom: 1px solid rgba(224, 221, 216, 0.62);
+      padding: 14px 0;
+      border-bottom: 1px solid var(--border);
       transition: padding-right 0.22s ease;
     }
 
-    .record-content {
-      display: contents;
+    .record-bar {
+      width: 4px;
+      min-height: 36px;
+      border-radius: 999px;
+      align-self: stretch;
+    }
+
+    .record-body {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .record-main {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 0;
+      line-height: 1.4;
+    }
+
+    .record-title {
+      color: var(--text);
+      font-size: 15px;
+      font-weight: 500;
+      word-break: break-all;
+    }
+
+    .record-tags {
+      margin-left: 4px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .record-sub {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .record-category {
+      border: 0;
+      background: transparent;
+      padding: 0;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .record-category:active {
+      opacity: 0.7;
+    }
+
+    .record-duration {
+      color: var(--muted);
+      font-size: 13px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .record-time {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
+      flex-shrink: 0;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .record-time-start,
+    .record-time-end {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.4;
     }
 
     .record-actions {
@@ -684,35 +757,10 @@
       }
     }
 
-    .record-time {
-      color: var(--muted);
-      font-variant-numeric: tabular-nums;
-      line-height: 1.7;
-    }
-
-    .record-duration {
-      color: var(--muted);
-      font-size: 0.85em;
-      font-variant-numeric: tabular-nums;
-      line-height: 2;
-      text-align: right;
-      white-space: nowrap;
-    }
-
-    .record-text {
-      overflow-wrap: anywhere;
-      line-height: 1.7;
-    }
-
-    .record-title {
-      line-height: 1.7;
-    }
-
     .record-note {
-      margin-top: 4px;
       color: var(--muted);
-      font-size: 0.85em;
-      line-height: 1.5;
+      font-size: 13px;
+      line-height: 1.4;
       overflow-wrap: anywhere;
     }
 
@@ -745,7 +793,6 @@
     .category-picker,
     .tag-picker,
     .edit-panel {
-      grid-column: 3 / -1;
       display: flex;
       flex-wrap: wrap;
       gap: 7px;
@@ -1226,19 +1273,7 @@
       }
 
       .record {
-        grid-template-columns: 68px 5.2em minmax(0, 1fr) auto;
-        gap: 9px;
-      }
-
-      .label-stack {
-        justify-content: flex-start;
-        max-width: none;
-      }
-
-      .category-picker,
-      .tag-picker,
-      .edit-panel {
-        grid-column: 1 / -1;
+        column-gap: 10px;
       }
 
       .form-line {
@@ -1259,54 +1294,8 @@
 
     @media (max-width: 480px) {
       .record {
-        grid-template-columns: max-content max-content minmax(0, 1fr);
         column-gap: 8px;
-        row-gap: 4px;
-        padding: 10px 0;
-      }
-
-      .record-time {
-        grid-column: 1;
-        grid-row: 1;
-      }
-
-      .record-duration {
-        grid-column: 2;
-        grid-row: 1;
-        line-height: 2;
-        text-align: left;
-      }
-
-      .record-text {
-        grid-column: 1 / -1;
-        grid-row: 2;
-        min-width: 0;
-        line-height: 1.5;
-      }
-
-      .record-title {
-        color: var(--text);
-        font-size: 1em;
-        font-weight: normal;
-        line-height: 1.5;
-      }
-
-      .record-note {
-        margin-top: 4px;
-      }
-
-      .label-stack {
-        grid-column: 1 / -1;
-        grid-row: 3;
-        justify-content: flex-start;
-        max-width: none;
-        margin-top: 0;
-      }
-
-      .category-picker,
-      .tag-picker,
-      .edit-panel {
-        grid-column: 1 / -1;
+        padding: 12px 0;
       }
     }
   </style>
@@ -3124,62 +3113,83 @@
       records.forEach((record, index) => {
         const item = document.createElement("li");
         item.className = "record";
-
-        const content = document.createElement("div");
-        content.className = "record-content";
-
-        const time = document.createElement("span");
-        time.className = "record-time";
-        time.textContent = record.time;
-
-        const duration = document.createElement("span");
-        duration.className = "record-duration";
-        duration.textContent = index < records.length - 1
-          ? formatDuration(durationBetween(records[index + 1].time, record.time))
-          : "—";
-
-        const text = document.createElement("span");
-        text.className = "record-text";
-
-        const title = document.createElement("div");
-        title.className = "record-title";
-        title.textContent = record.text;
-        text.append(title);
-
-        if (record.note) {
-          const note = document.createElement("div");
-          note.className = "record-note";
-          note.textContent = record.note;
-          text.append(note);
-        }
-
-        const labelStack = document.createElement("span");
-        labelStack.className = "label-stack";
+        item.dataset.index = String(index);
 
         const classificationDraft = isCategoryOpen(index) || isTagOpen(index)
           ? getClassificationDraft(index, record)
           : classificationDrafts[index];
         const displayCategory = classificationDraft ? classificationDraft.category : record.category;
         const displayTags = classificationDraft ? classificationDraft.tags : record.tags;
+        const displayColor = displayCategory ? categoryColor(displayCategory) : null;
+        const hasInterval = index < records.length - 1;
+        const durationText = hasInterval
+          ? formatDuration(durationBetween(records[index + 1].time, record.time))
+          : "—";
+
+        const bar = document.createElement("div");
+        bar.className = "record-bar";
+        bar.style.background = displayColor || "var(--border)";
+
+        const body = document.createElement("div");
+        body.className = "record-body";
+
+        const mainRow = document.createElement("div");
+        mainRow.className = "record-main";
+
+        const title = document.createElement("span");
+        title.className = "record-title";
+        title.textContent = record.text;
+        mainRow.append(title);
+
+        if (displayTags.length > 0) {
+          const tags = document.createElement("span");
+          tags.className = "record-tags";
+          tags.textContent = displayTags.map((tag) => `#${tag}`).join(" ");
+          mainRow.append(tags);
+        }
+
+        const subRow = document.createElement("div");
+        subRow.className = "record-sub";
 
         if (displayCategory) {
-          const categoryBadge = createCategoryBadge(displayCategory, {
-            button: true
-          });
-          categoryBadge.addEventListener("click", () => {
+          const category = document.createElement("button");
+          category.className = "record-category";
+          category.type = "button";
+          category.style.color = displayColor || "var(--muted)";
+          category.textContent = displayCategory;
+          category.addEventListener("click", () => {
             openCategorySelection(index, record);
           });
-          labelStack.append(categoryBadge);
+          subRow.append(category);
+        }
 
-          displayTags.forEach((tag) => {
-            labelStack.append(createTagBadge(tag, displayCategory, index, {
-              button: true
-            }));
-            const tagBadge = labelStack.lastElementChild;
-            tagBadge.addEventListener("click", () => {
-              openTagSelection(index, record);
-            });
-          });
+        const duration = document.createElement("span");
+        duration.className = "record-duration";
+        duration.textContent = displayCategory ? ` · ${durationText}` : durationText;
+        subRow.append(duration);
+
+        body.append(mainRow, subRow);
+
+        if (record.note) {
+          const note = document.createElement("div");
+          note.className = "record-note";
+          note.textContent = record.note;
+          body.append(note);
+        }
+
+        const time = document.createElement("div");
+        time.className = "record-time";
+
+        const startTime = document.createElement("span");
+        startTime.className = "record-time-start";
+        startTime.textContent = hasInterval ? records[index + 1].time : record.time;
+        time.append(startTime);
+
+        if (hasInterval) {
+          const endTime = document.createElement("span");
+          endTime.className = "record-time-end";
+          endTime.textContent = record.time;
+          time.append(endTime);
         }
 
         const actions = document.createElement("div");
@@ -3220,18 +3230,17 @@
         });
 
         actions.append(editButton, deleteButton);
-        content.append(time, duration, text, labelStack);
 
         if (isCategoryOpen(index)) {
-          content.append(createCategoryPicker(record, index));
+          body.append(createCategoryPicker(record, index));
         }
 
-        if (record.category && isTagOpen(index)) {
-          content.append(createTagPicker(record, index));
+        if (displayCategory && isTagOpen(index)) {
+          body.append(createTagPicker(record, index));
         }
 
         if (editingRecordIndex === index && editDraft) {
-          content.append(createEditPanel(index));
+          body.append(createEditPanel(index));
         }
 
         let touchStartX = 0;
@@ -3263,7 +3272,7 @@
           didSwipe = false;
         });
 
-        item.append(content, actions);
+        item.append(bar, body, time, actions);
 
         list.append(item);
       });

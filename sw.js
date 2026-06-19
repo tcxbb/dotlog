@@ -1,4 +1,4 @@
-const CACHE_NAME = "dotlog-v0.7.2-bottom-sheet";
+const CACHE_NAME = "dotlog-v0.7.3-record-redesign";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (event) => {
