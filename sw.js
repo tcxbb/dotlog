@@ -1,4 +1,4 @@
-const CACHE_NAME = "dotlog-v0.7.5-week-navigation";
+const CACHE_NAME = "dotlog-v0.7.5.1-scroll-fix";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (event) => {
