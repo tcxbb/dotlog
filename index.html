@@ -613,14 +613,12 @@
 
     .record {
       position: relative;
-      overflow: hidden;
       display: grid;
       grid-template-columns: 4px minmax(0, 1fr) auto;
       column-gap: 12px;
       align-items: start;
       padding: 14px 0;
       border-bottom: 1px solid var(--border);
-      transition: padding-right 0.22s ease;
     }
 
     .record-bar {
@@ -701,60 +699,61 @@
       line-height: 1.4;
     }
 
-    .record-actions {
-      position: absolute;
-      top: 0;
-      right: 0;
-      bottom: 0;
-      z-index: 1;
-      display: flex;
-      align-items: stretch;
-      transform: translateX(100%);
-      transition: transform 0.22s ease;
+    .ctx-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 500;
+      background: rgba(0, 0, 0, 0.18);
     }
 
-    .record-action-btn {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 56px;
+    .ctx-overlay.is-hidden {
+      display: none;
+    }
+
+    .ctx-menu {
+      position: fixed;
+      z-index: 600;
+      min-width: 180px;
+      overflow: hidden;
+      border-radius: 14px;
+      background: var(--paper);
+      box-shadow:
+        0 8px 32px rgba(0, 0, 0, 0.14),
+        0 2px 8px rgba(0, 0, 0, 0.08);
+    }
+
+    .ctx-menu.is-hidden {
+      display: none;
+    }
+
+    .ctx-item {
+      display: block;
+      width: 100%;
       border: 0;
-      padding: 0;
+      background: transparent;
+      padding: 14px 20px;
+      text-align: left;
+      font-size: 16px;
+      line-height: 1;
       cursor: pointer;
     }
 
-    .record-action-btn svg {
-      width: 18px;
-      height: 18px;
-      fill: none;
-      stroke: #FFFFFF;
-      stroke-width: 1.8;
+    .ctx-item:active {
+      background: var(--bg);
     }
 
-    .record-action-edit {
-      background: var(--accent);
+    .ctx-edit {
+      color: var(--text);
     }
 
-    .record-action-delete {
-      background: #C87B7B;
+    .ctx-delete {
+      color: #C0392B;
     }
 
-    .record.is-swiped .record-actions {
-      transform: translateX(0);
-    }
-
-    .record.is-swiped {
-      padding-right: 112px;
-    }
-
-    @media (hover: hover) {
-      .record:hover .record-actions {
-        transform: translateX(0);
-      }
-
-      .record:hover {
-        padding-right: 112px;
-      }
+    .ctx-divider {
+      height: 1px;
+      margin: 0;
+      background: var(--border);
     }
 
     .record-note {
@@ -1373,6 +1372,14 @@
       <section class="calendar-import-panel" id="calendarImportPanel"></section>
     </div>
 
+    <div class="ctx-overlay is-hidden" id="ctxOverlay"></div>
+
+    <div class="ctx-menu is-hidden" id="ctxMenu" role="menu" aria-label="记录操作">
+      <button class="ctx-item ctx-edit" id="ctxEdit" type="button" role="menuitem">编辑</button>
+      <div class="ctx-divider"></div>
+      <button class="ctx-item ctx-delete" id="ctxDelete" type="button" role="menuitem">删除</button>
+    </div>
+
     <button class="fab" id="fab" type="button" aria-label="新增记录">
       <svg viewBox="0 0 20 20" fill="none" stroke="#FFFFFF" stroke-width="2" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
         <line x1="10" y1="4" x2="10" y2="16"/>
@@ -1451,6 +1458,10 @@
     const fab = document.querySelector("#fab");
     const bottomSheet = document.querySelector("#bottomSheet");
     const sheetOverlay = document.querySelector("#sheetOverlay");
+    const ctxOverlay = document.querySelector("#ctxOverlay");
+    const ctxMenu = document.querySelector("#ctxMenu");
+    const ctxEdit = document.querySelector("#ctxEdit");
+    const ctxDelete = document.querySelector("#ctxDelete");
     const tableTools = document.querySelector("#tableTools");
     const tableToggle = document.querySelector("#tableToggle");
     const exportIcs = document.querySelector("#exportIcs");
@@ -1487,6 +1498,9 @@
     let classificationDrafts = {};
     let exportStatusTimer = null;
     let bottomSheetCloseTimer = null;
+    let ctxTargetIndex = null;
+    let ctxTargetRecord = null;
+    let longPressTimer = null;
     let settingsMode = "main";
     let editingRecordIndex = null;
     let editDraft = null;
@@ -2274,10 +2288,31 @@
       return openTagIndexes.includes(index);
     }
 
-    function closeAllSwipedRecords() {
-      document.querySelectorAll(".record.is-swiped").forEach((element) => {
-        element.classList.remove("is-swiped");
-      });
+    function openCtxMenu(index, record, position) {
+      ctxTargetIndex = index;
+      ctxTargetRecord = record;
+      ctxOverlay.classList.remove("is-hidden");
+      ctxMenu.classList.remove("is-hidden");
+
+      const menuWidth = 180;
+      const menuHeight = 110;
+      const padding = 12;
+      let x = position.x - menuWidth / 2;
+      let y = position.y - menuHeight - padding;
+
+      x = Math.max(padding, Math.min(x, window.innerWidth - menuWidth - padding));
+      if (y < padding) y = position.y + padding;
+
+      ctxMenu.style.left = `${x}px`;
+      ctxMenu.style.top = `${y}px`;
+    }
+
+    function closeCtxMenu() {
+      clearTimeout(longPressTimer);
+      ctxOverlay.classList.add("is-hidden");
+      ctxMenu.classList.add("is-hidden");
+      ctxTargetIndex = null;
+      ctxTargetRecord = null;
     }
 
     function createCategoryBadge(categoryName, options = {}) {
@@ -3192,45 +3227,6 @@
           time.append(endTime);
         }
 
-        const actions = document.createElement("div");
-        actions.className = "record-actions";
-
-        const editButton = document.createElement("button");
-        editButton.className = "record-action-btn record-action-edit";
-        editButton.type = "button";
-        editButton.setAttribute("aria-label", "编辑");
-        editButton.innerHTML = `<svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-          <path d="M14.5 2.5l3 3L6 17H3v-3L14.5 2.5z"/>
-        </svg>`;
-        editButton.addEventListener("click", () => {
-          startEditingRecord(index, record);
-          closeAllSwipedRecords();
-        });
-
-        const deleteButton = document.createElement("button");
-        deleteButton.className = "record-action-btn record-action-delete";
-        deleteButton.type = "button";
-        deleteButton.setAttribute("aria-label", "删除");
-        deleteButton.innerHTML = `<svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-          <polyline points="4,6 16,6"/>
-          <path d="M7 6V4h6v2"/>
-          <rect x="5" y="6" width="10" height="11" rx="1"/>
-        </svg>`;
-        deleteButton.addEventListener("click", () => {
-          if (!confirm("确认删除这条记录？")) return;
-          const latestRecords = loadRecords(viewedDate);
-          latestRecords.splice(index, 1);
-          saveRecords(viewedDate, latestRecords);
-          openCategoryIndexes = [];
-          openTagIndexes = [];
-          classificationDrafts = {};
-          editingRecordIndex = null;
-          editDraft = null;
-          render();
-        });
-
-        actions.append(editButton, deleteButton);
-
         if (isCategoryOpen(index)) {
           body.append(createCategoryPicker(record, index));
         }
@@ -3243,36 +3239,47 @@
           body.append(createEditPanel(index));
         }
 
-        let touchStartX = 0;
-        let touchStartY = 0;
-        let didSwipe = false;
+        let longPressTriggered = false;
+        let longPressResetTimer = null;
         item.addEventListener("touchstart", (event) => {
-          touchStartX = event.touches[0].clientX;
-          touchStartY = event.touches[0].clientY;
-          didSwipe = false;
+          clearTimeout(longPressTimer);
+          clearTimeout(longPressResetTimer);
+          longPressTriggered = false;
+          const touch = event.touches[0];
+          const position = { x: touch.clientX, y: touch.clientY };
+          longPressTimer = setTimeout(() => {
+            longPressTriggered = true;
+            if (navigator.vibrate) navigator.vibrate(40);
+            openCtxMenu(index, record, position);
+          }, 500);
         }, { passive: true });
-        item.addEventListener("touchend", (event) => {
-          const deltaX = event.changedTouches[0].clientX - touchStartX;
-          const deltaY = event.changedTouches[0].clientY - touchStartY;
-          if (Math.abs(deltaX) <= Math.abs(deltaY)) return;
-
-          if (deltaX < -40) {
-            closeAllSwipedRecords();
-            item.classList.add("is-swiped");
-            didSwipe = true;
-          } else if (deltaX > 40) {
-            item.classList.remove("is-swiped");
-            didSwipe = true;
+        item.addEventListener("touchend", () => {
+          clearTimeout(longPressTimer);
+          if (longPressTriggered) {
+            longPressResetTimer = setTimeout(() => {
+              longPressTriggered = false;
+            }, 700);
           }
         }, { passive: true });
+        item.addEventListener("touchmove", () => {
+          clearTimeout(longPressTimer);
+        }, { passive: true });
+        item.addEventListener("touchcancel", () => {
+          clearTimeout(longPressTimer);
+          longPressTriggered = false;
+        }, { passive: true });
         item.addEventListener("click", (event) => {
-          if (!didSwipe) return;
+          if (!longPressTriggered) return;
           event.preventDefault();
           event.stopPropagation();
-          didSwipe = false;
+          longPressTriggered = false;
+        });
+        item.addEventListener("contextmenu", (event) => {
+          event.preventDefault();
+          openCtxMenu(index, record, { x: event.clientX, y: event.clientY });
         });
 
-        item.append(bar, body, time, actions);
+        item.append(bar, body, time);
 
         list.append(item);
       });
@@ -3903,6 +3910,32 @@
       }
     });
 
+    ctxEdit.addEventListener("click", () => {
+      if (ctxTargetIndex === null || !ctxTargetRecord) return;
+      const targetIndex = ctxTargetIndex;
+      const targetRecord = ctxTargetRecord;
+      closeCtxMenu();
+      startEditingRecord(targetIndex, targetRecord);
+    });
+
+    ctxDelete.addEventListener("click", () => {
+      if (ctxTargetIndex === null) return;
+      const targetIndex = ctxTargetIndex;
+      closeCtxMenu();
+      if (!confirm("确认删除这条记录？")) return;
+      const latestRecords = loadRecords(viewedDate);
+      latestRecords.splice(targetIndex, 1);
+      saveRecords(viewedDate, latestRecords);
+      openCategoryIndexes = [];
+      openTagIndexes = [];
+      classificationDrafts = {};
+      editingRecordIndex = null;
+      editDraft = null;
+      render();
+    });
+
+    ctxOverlay.addEventListener("click", closeCtxMenu);
+
     entryInput.addEventListener("input", updateSplitHint);
 
     fab.addEventListener("click", () => {
@@ -3977,11 +4010,11 @@
     document.addEventListener("click", () => {
       closeDatePicker();
       closeCalendarMenu();
-      closeAllSwipedRecords();
     });
 
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {
+        closeCtxMenu();
         closeBottomSheet();
         closeCalendarMenu();
         closeCalendarImportPanel();
