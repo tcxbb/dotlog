@@ -40,9 +40,9 @@
     }
 
     .page {
-      width: min(100% - 32px, 680px);
+      width: min(100%, 720px);
       margin: 0 auto;
-      padding: 56px 0 100px;
+      padding: 56px 20px 100px;
     }
 
     .app-title {
@@ -146,16 +146,32 @@
 
     .month-bar {
       display: flex;
-      align-items: center;
+      align-items: baseline;
       justify-content: space-between;
       padding: 16px 0 8px;
     }
 
     .month-title {
       color: var(--text);
-      font-size: 22px;
-      font-weight: 600;
-      letter-spacing: -0.3px;
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      margin: 0;
+    }
+
+    .month-bar-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .month-meta {
+      color: var(--muted);
+      padding-bottom: 2px;
+      font-size: 13px;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
     }
 
     .today-btn {
@@ -260,17 +276,6 @@
 
     .week-day.is-today.is-selected .week-day-dot {
       background: rgba(255, 255, 255, 0.7);
-    }
-
-    .day-summary {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      margin: 0 0 18px;
-      padding-bottom: 12px;
-      color: var(--muted);
-      font-size: 0.85em;
-      font-variant-numeric: tabular-nums;
     }
 
     .sync-indicator {
@@ -420,8 +425,33 @@
 
     .sheet-actions {
       display: flex;
-      justify-content: flex-end;
+      align-items: center;
+      justify-content: space-between;
       margin-top: 12px;
+    }
+
+    .sheet-plus-btn {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: transparent;
+      color: var(--muted);
+      padding: 8px 14px;
+      font-size: 14px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .sheet-plus-btn svg {
+      width: 14px;
+      height: 14px;
+      stroke: var(--muted);
+    }
+
+    .sheet-plus-btn:active {
+      background: var(--bg);
     }
 
     .sheet-submit {
@@ -661,6 +691,18 @@
       margin: 26px 0 0;
       padding: 0;
       list-style: none;
+    }
+
+    .period-header {
+      padding: 16px 0 6px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: 0.3px;
+    }
+
+    .period-header:first-child {
+      padding-top: 8px;
     }
 
     .record {
@@ -1355,7 +1397,7 @@
 
     @media (max-width: 520px) {
       .page {
-        width: min(100% - 24px, 680px);
+        width: 100%;
         padding-top: 32px;
       }
 
@@ -1437,7 +1479,11 @@
       </div>
       <div class="month-bar">
         <div class="month-title" id="monthTitle"></div>
-        <button class="today-btn is-hidden" id="todayBtn" type="button">今天</button>
+        <div class="month-bar-actions">
+          <div class="month-meta" id="monthMeta"></div>
+          <span class="sync-indicator is-hidden" id="syncIndicator"></span>
+          <button class="today-btn is-hidden" id="todayBtn" type="button">今天</button>
+        </div>
       </div>
 
       <div class="week-nav" id="weekNav">
@@ -1451,10 +1497,6 @@
           <span>日</span>
         </div>
         <div class="week-days" id="weekDays"></div>
-      </div>
-      <div class="day-summary is-hidden" id="daySummary">
-        <span id="summaryText"></span>
-        <span class="sync-indicator is-hidden" id="syncIndicator"></span>
       </div>
     </header>
 
@@ -1517,6 +1559,13 @@
         >
         <div class="split-hint is-hidden" id="splitHint">检测到加号 · 拆分格式：主事件 + 次事件 时长（分钟）</div>
         <div class="sheet-actions">
+          <button class="sheet-plus-btn" id="insertPlus" type="button" aria-label="插入加号">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <line x1="10" y1="4" x2="10" y2="16"/>
+              <line x1="4" y1="10" x2="16" y2="10"/>
+            </svg>
+            <span>插入 +</span>
+          </button>
           <button class="sheet-submit" type="submit">记录</button>
         </div>
       </form>
@@ -1558,6 +1607,7 @@
   <script>
     const entryForm = document.querySelector("#entryForm");
     const entryInput = document.querySelector("#entryInput");
+    const insertPlusBtn = document.querySelector("#insertPlus");
     const backfillToggle = document.querySelector("#backfillToggle");
     const backfillPanel = document.querySelector("#backfillPanel");
     const backfillYear = document.querySelector("#backfillYear");
@@ -1589,11 +1639,10 @@
     const tableArea = document.querySelector("#tableArea");
     const recordsArea = document.querySelector("#recordsArea");
     const monthTitle = document.querySelector("#monthTitle");
+    const monthMeta = document.querySelector("#monthMeta");
     const todayBtn = document.querySelector("#todayBtn");
     const weekNav = document.querySelector("#weekNav");
     const weekDays = document.querySelector("#weekDays");
-    const daySummary = document.querySelector("#daySummary");
-    const summaryText = document.querySelector("#summaryText");
     const syncIndicator = document.querySelector("#syncIndicator");
     const settingsButton = document.querySelector("#settingsButton");
     const settingsView = document.querySelector("#settingsView");
@@ -1733,6 +1782,25 @@
       const startRecord = chronologicalRecords[0];
       const endRecord = chronologicalRecords[chronologicalRecords.length - 1];
       return `${records.length} 条 · ${formatDuration(durationBetween(startRecord.time, endRecord.time))}`;
+    }
+
+    function getTimePeriod(time) {
+      const hour = Number(time.split(":")[0]);
+      if (hour < 6) return "夜间";
+      if (hour < 12) return "早上";
+      if (hour < 18) return "下午";
+      return "晚上";
+    }
+
+    const periodOrder = ["晚上", "下午", "早上", "夜间"];
+
+    function groupRecordsByPeriod(records) {
+      return records.reduce((groups, record, index) => {
+        const period = getTimePeriod(record.time);
+        if (!groups[period]) groups[period] = [];
+        groups[period].push({ record, index });
+        return groups;
+      }, {});
     }
 
     function daysInMonth(year, month) {
@@ -3307,9 +3375,7 @@
 
       renderWeekNav();
       fab.classList.toggle("is-hidden", !viewingToday);
-      const currentSummaryText = summaryTextForRecords(records);
-      summaryText.textContent = currentSummaryText;
-      daySummary.classList.toggle("is-hidden", !currentSummaryText);
+      monthMeta.textContent = summaryTextForRecords(records);
       updateSyncIndicators();
 
       if (!tableExpanded) {
@@ -3332,8 +3398,17 @@
 
       const list = document.createElement("ul");
       list.className = "list";
+      const groups = groupRecordsByPeriod(records);
 
-      records.forEach((record, index) => {
+      periodOrder.forEach((period) => {
+        if (!groups[period]?.length) return;
+
+        const header = document.createElement("li");
+        header.className = "period-header";
+        header.textContent = period;
+        list.append(header);
+
+        groups[period].forEach(({ record, index }) => {
         const item = document.createElement("li");
         item.className = "record";
         item.dataset.index = String(index);
@@ -3469,7 +3544,8 @@
 
         item.append(bar, body, time);
 
-        list.append(item);
+          list.append(item);
+        });
       });
 
       recordsArea.replaceChildren(list);
@@ -4131,6 +4207,17 @@
     ctxOverlay.addEventListener("click", closeCtxMenu);
 
     entryInput.addEventListener("input", updateSplitHint);
+
+    insertPlusBtn.addEventListener("click", () => {
+      const start = entryInput.selectionStart ?? entryInput.value.length;
+      const end = entryInput.selectionEnd ?? start;
+      const insertion = " + ";
+      entryInput.value = entryInput.value.slice(0, start) + insertion + entryInput.value.slice(end);
+      const newPosition = start + insertion.length;
+      entryInput.setSelectionRange(newPosition, newPosition);
+      updateSplitHint();
+      entryInput.focus();
+    });
 
     fab.addEventListener("click", () => {
       if (bottomSheet.classList.contains("is-open")) {

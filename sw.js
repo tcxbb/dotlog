@@ -1,4 +1,4 @@
-const CACHE_NAME = "dotlog-v0.7.7-settings-theme-menu";
+const CACHE_NAME = "dotlog-v0.7.8-input-spacing-period-summary";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (event) => {
