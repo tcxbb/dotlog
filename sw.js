@@ -1,4 +1,4 @@
-const CACHE_NAME = "dotlog-v0.7.4.1-context-menu-fix";
+const CACHE_NAME = "dotlog-v0.7.5-week-navigation";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (event) => {

@@ -143,45 +143,129 @@
       display: none !important;
     }
 
-    .date-row {
+    .month-bar {
       display: flex;
       align-items: center;
-      gap: 10px;
-      min-height: 32px;
-      margin-top: 12px;
-      margin-bottom: 8px;
-      color: var(--muted);
-      font-size: 14px;
+      justify-content: space-between;
+      padding: 16px 0 8px;
     }
 
-    .date-text {
-      border: 0;
+    .month-title {
+      color: var(--text);
+      font-size: 22px;
+      font-weight: 600;
+      letter-spacing: -0.3px;
+    }
+
+    .today-btn {
+      border: 1px solid var(--accent);
+      border-radius: 6px;
       background: transparent;
       color: var(--accent);
+      padding: 4px 12px;
+      font-size: 13px;
       cursor: pointer;
-      font-variant-numeric: tabular-nums;
-      padding: 4px 2px;
     }
 
-    .date-text:hover {
-      text-decoration: underline;
+    .today-btn.is-hidden {
+      display: none;
     }
 
-    .date-picker {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 8px;
-      margin: 0 0 12px 38px;
+    .week-nav {
+      overflow: hidden;
+      margin-bottom: 8px;
+      padding: 8px 0 12px;
+      border-bottom: 1px solid var(--border);
+      user-select: none;
+    }
+
+    .week-header,
+    .week-days {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      text-align: center;
+    }
+
+    .week-header {
+      margin-bottom: 6px;
+    }
+
+    .week-header span {
       color: var(--muted);
-      font-size: 14px;
+      font-size: 12px;
+      line-height: 1;
+    }
+
+    .week-days {
+      transition: transform 0.22s ease, opacity 0.22s ease;
+    }
+
+    .week-day {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      border: 0;
+      background: transparent;
+      padding: 4px 0;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .week-day-num {
+      display: flex;
+      width: 34px;
+      height: 34px;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      color: var(--text);
+      font-size: 16px;
+      font-weight: 400;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+
+    .week-day.is-today .week-day-num {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .week-day.is-selected .week-day-num {
+      background: var(--text);
+      color: var(--paper);
+      font-weight: 600;
+    }
+
+    .week-day.is-today.is-selected .week-day-num {
+      background: var(--accent);
+      color: #FFFFFF;
+    }
+
+    .week-day-dot {
+      width: 4px;
+      height: 4px;
+      border-radius: 999px;
+      background: var(--muted);
+    }
+
+    .week-day.is-today .week-day-dot {
+      background: var(--accent);
+    }
+
+    .week-day.is-selected .week-day-dot {
+      background: var(--paper);
+    }
+
+    .week-day.is-today.is-selected .week-day-dot {
+      background: rgba(255, 255, 255, 0.7);
     }
 
     .day-summary {
       display: flex;
       justify-content: space-between;
       gap: 12px;
-      margin: 0 0 18px 38px;
+      margin: 0 0 18px;
       padding-bottom: 12px;
       color: var(--muted);
       font-size: 0.85em;
@@ -207,7 +291,6 @@
       to { transform: rotate(360deg); }
     }
 
-    .date-select,
     .compact-select {
       border: 1px solid var(--border);
       border-radius: 6px;
@@ -217,40 +300,8 @@
       outline: none;
     }
 
-    .date-select:focus,
     .compact-select:focus {
       border-color: var(--accent);
-    }
-
-    .nav-button {
-      display: inline-grid;
-      width: 28px;
-      height: 28px;
-      place-items: center;
-      border: 1px solid transparent;
-      border-radius: 999px;
-      background: transparent;
-      color: var(--muted);
-      cursor: pointer;
-    }
-
-    .nav-button:hover {
-      border-color: var(--border);
-      color: var(--text);
-      background: rgba(255, 255, 255, 0.5);
-    }
-
-    .today-link {
-      border: 0;
-      padding: 0;
-      background: transparent;
-      color: var(--accent);
-      cursor: pointer;
-      font-size: 14px;
-    }
-
-    .today-link:hover {
-      text-decoration: underline;
     }
 
     .backfill-panel,
@@ -1359,20 +1410,22 @@
           <button class="settings-button" id="settingsButton" type="button" aria-label="分类与标签管理">⚙️</button>
         </div>
       </div>
-      <div class="date-row">
-        <button class="nav-button" id="prevDate" type="button" aria-label="查看前一天">←</button>
-        <button class="date-text" id="dateText" type="button"></button>
-        <button class="nav-button" id="nextDate" type="button" aria-label="查看后一天">→</button>
-        <button class="today-link" id="todayLink" type="button" hidden>← 返回今天</button>
+      <div class="month-bar">
+        <div class="month-title" id="monthTitle"></div>
+        <button class="today-btn is-hidden" id="todayBtn" type="button">今天</button>
       </div>
-      <div class="date-picker is-hidden" id="datePicker">
-        <select class="date-select" id="viewYear" aria-label="选择年份"></select>
-        <span>年</span>
-        <select class="date-select" id="viewMonth" aria-label="选择月份"></select>
-        <span>月</span>
-        <select class="date-select" id="viewDay" aria-label="选择日期"></select>
-        <span>日</span>
-        <button class="outline-button" id="jumpDate" type="button">跳转</button>
+
+      <div class="week-nav" id="weekNav">
+        <div class="week-header" aria-hidden="true">
+          <span>一</span>
+          <span>二</span>
+          <span>三</span>
+          <span>四</span>
+          <span>五</span>
+          <span>六</span>
+          <span>日</span>
+        </div>
+        <div class="week-days" id="weekDays"></div>
       </div>
       <div class="day-summary is-hidden" id="daySummary">
         <span id="summaryText"></span>
@@ -1494,24 +1547,22 @@
     const exportStatus = document.querySelector("#exportStatus");
     const tableArea = document.querySelector("#tableArea");
     const recordsArea = document.querySelector("#recordsArea");
-    const dateText = document.querySelector("#dateText");
-    const datePicker = document.querySelector("#datePicker");
-    const viewYear = document.querySelector("#viewYear");
-    const viewMonth = document.querySelector("#viewMonth");
-    const viewDay = document.querySelector("#viewDay");
-    const jumpDate = document.querySelector("#jumpDate");
+    const monthTitle = document.querySelector("#monthTitle");
+    const todayBtn = document.querySelector("#todayBtn");
+    const weekNav = document.querySelector("#weekNav");
+    const weekDays = document.querySelector("#weekDays");
     const daySummary = document.querySelector("#daySummary");
     const summaryText = document.querySelector("#summaryText");
     const syncIndicator = document.querySelector("#syncIndicator");
-    const prevDate = document.querySelector("#prevDate");
-    const nextDate = document.querySelector("#nextDate");
-    const todayLink = document.querySelector("#todayLink");
     const settingsButton = document.querySelector("#settingsButton");
     const settingsView = document.querySelector("#settingsView");
     const pageHeader = document.querySelector("header");
 
     const today = startOfDay(new Date());
     let viewedDate = startOfDay(new Date());
+    let currentWeekStart = getWeekStart(viewedDate);
+    let weekSwipeStartX = 0;
+    let weekSwipeStartY = 0;
     let tableExpanded = false;
     let openCategoryIndexes = [];
     let openTagIndexes = [];
@@ -1570,6 +1621,25 @@
       const month = String(date.getMonth() + 1).padStart(2, "0");
       const day = String(date.getDate()).padStart(2, "0");
       return `${year}-${month}-${day}`;
+    }
+
+    function getWeekStart(date) {
+      const start = startOfDay(date);
+      const day = start.getDay();
+      start.setDate(start.getDate() + (day === 0 ? -6 : 1 - day));
+      return start;
+    }
+
+    function offsetDate(date, days) {
+      return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+    }
+
+    function isSameDate(first, second) {
+      return formatDateKey(first) === formatDateKey(second);
+    }
+
+    function hasRecords(date) {
+      return loadRecords(date).length > 0;
     }
 
     function formatDateLabel(date) {
@@ -2187,41 +2257,85 @@
         .map((item) => item.record);
     }
 
-    function changeViewedDate(dayOffset) {
-      viewedDate = startOfDay(new Date(
-        viewedDate.getFullYear(),
-        viewedDate.getMonth(),
-        viewedDate.getDate() + dayOffset
-      ));
+    function resetDateViewState() {
       tableExpanded = false;
       openCategoryIndexes = [];
       openTagIndexes = [];
       classificationDrafts = {};
       editingRecordIndex = null;
       editDraft = null;
-      datePicker.classList.add("is-hidden");
+    }
+
+    function setViewedDate(date) {
+      viewedDate = startOfDay(date);
+      currentWeekStart = getWeekStart(viewedDate);
+      resetDateViewState();
       render();
     }
 
-    function openDatePicker() {
-      setDateSelectors(viewYear, viewMonth, viewDay, viewedDate);
-      datePicker.classList.remove("is-hidden");
+    function renderWeekNav() {
+      weekDays.replaceChildren();
+      const todayDate = startOfDay(new Date());
+
+      monthTitle.textContent = formatShortDateLabel(viewedDate);
+      todayBtn.classList.toggle("is-hidden", isSameDate(viewedDate, todayDate));
+
+      for (let index = 0; index < 7; index += 1) {
+        const date = offsetDate(currentWeekStart, index);
+        const day = document.createElement("button");
+        day.className = "week-day";
+        day.type = "button";
+        day.setAttribute("aria-label", formatDateLabel(date));
+        if (isSameDate(date, todayDate)) day.classList.add("is-today");
+        if (isSameDate(date, viewedDate)) day.classList.add("is-selected");
+
+        const number = document.createElement("span");
+        number.className = "week-day-num";
+        number.textContent = String(date.getDate());
+        day.append(number);
+
+        if (hasRecords(date)) {
+          const dot = document.createElement("span");
+          dot.className = "week-day-dot";
+          day.append(dot);
+        }
+
+        day.addEventListener("click", () => setViewedDate(date));
+        weekDays.append(day);
+      }
     }
 
-    function closeDatePicker() {
-      datePicker.classList.add("is-hidden");
+    function animateWeekTransition(direction) {
+      const outX = direction === "left" ? "-100%" : "100%";
+      const inX = direction === "left" ? "100%" : "-100%";
+      weekDays.style.transition = "none";
+      weekDays.style.opacity = "0";
+      weekDays.style.transform = `translateX(${outX})`;
+
+      requestAnimationFrame(() => {
+        weekDays.style.transition = "transform 0.22s ease, opacity 0.22s ease";
+        weekDays.style.transform = `translateX(${inX})`;
+        requestAnimationFrame(() => {
+          weekDays.style.transform = "translateX(0)";
+          weekDays.style.opacity = "1";
+        });
+      });
     }
 
-    function jumpToSelectedDate() {
-      viewedDate = dateFromSelectors(viewYear, viewMonth, viewDay);
-      tableExpanded = false;
-      openCategoryIndexes = [];
-      openTagIndexes = [];
-      classificationDrafts = {};
-      editingRecordIndex = null;
-      editDraft = null;
-      closeDatePicker();
+    function changeWeek(dayOffset, direction) {
+      viewedDate = offsetDate(viewedDate, dayOffset);
+      currentWeekStart = getWeekStart(viewedDate);
+      resetDateViewState();
+      animateWeekTransition(direction);
       render();
+    }
+
+    function goToPrevWeek() {
+      changeWeek(-7, "right");
+    }
+
+    function goToNextWeek() {
+      changeWeek(7, "left");
     }
 
     function getClassificationDraft(index, record) {
@@ -2676,7 +2790,6 @@
       settingsMode = "settings";
       editingRecordIndex = null;
       editDraft = null;
-      closeDatePicker();
       closeCalendarMenu();
       closeCalendarImportPanel();
       closeBottomSheet();
@@ -3137,8 +3250,7 @@
       const records = loadRecords(viewedDate);
       const viewingToday = isToday(viewedDate);
 
-      dateText.textContent = `${formatDateLabel(viewedDate)} ▾`;
-      todayLink.hidden = viewingToday;
+      renderWeekNav();
       fab.classList.toggle("is-hidden", !viewingToday);
       const currentSummaryText = summaryTextForRecords(records);
       summaryText.textContent = currentSummaryText;
@@ -3538,7 +3650,6 @@
       const opening = calendarMenu.classList.contains("is-hidden");
       calendarMenu.classList.toggle("is-hidden", !opening);
       exportIcs.setAttribute("aria-expanded", String(opening));
-      if (opening) closeDatePicker();
     }
 
     function closeCalendarImportPanel() {
@@ -3887,6 +3998,7 @@
 
       insertNewRecords(today, newRecords);
       viewedDate = startOfDay(new Date());
+      currentWeekStart = getWeekStart(viewedDate);
       entryInput.value = "";
       updateSplitHint();
       render();
@@ -4010,26 +4122,25 @@
 
     settingsButton.addEventListener("click", showSettingsPage);
 
-    dateText.addEventListener("click", (event) => {
-      event.stopPropagation();
-      closeCalendarMenu();
-      if (datePicker.classList.contains("is-hidden")) {
-        openDatePicker();
-      } else {
-        closeDatePicker();
+    weekNav.addEventListener("touchstart", (event) => {
+      weekSwipeStartX = event.touches[0].clientX;
+      weekSwipeStartY = event.touches[0].clientY;
+    }, { passive: true });
+
+    weekNav.addEventListener("touchend", (event) => {
+      const deltaX = event.changedTouches[0].clientX - weekSwipeStartX;
+      const deltaY = event.changedTouches[0].clientY - weekSwipeStartY;
+      if (Math.abs(deltaX) <= Math.abs(deltaY)) return;
+      if (deltaX < -50) {
+        goToNextWeek();
+      } else if (deltaX > 50) {
+        goToPrevWeek();
       }
-    });
+    }, { passive: true });
 
-    datePicker.addEventListener("click", (event) => {
-      event.stopPropagation();
-    });
-
-    viewYear.addEventListener("change", () => refreshDaySelector(viewYear, viewMonth, viewDay));
-    viewMonth.addEventListener("change", () => refreshDaySelector(viewYear, viewMonth, viewDay));
-    jumpDate.addEventListener("click", jumpToSelectedDate);
+    todayBtn.addEventListener("click", () => setViewedDate(new Date()));
 
     document.addEventListener("click", () => {
-      closeDatePicker();
       closeCalendarMenu();
     });
 
@@ -4040,20 +4151,6 @@
         closeCalendarMenu();
         closeCalendarImportPanel();
       }
-    });
-
-    prevDate.addEventListener("click", () => changeViewedDate(-1));
-    nextDate.addEventListener("click", () => changeViewedDate(1));
-    todayLink.addEventListener("click", () => {
-      viewedDate = startOfDay(new Date());
-      tableExpanded = false;
-      openCategoryIndexes = [];
-      openTagIndexes = [];
-      classificationDrafts = {};
-      editingRecordIndex = null;
-      editDraft = null;
-      closeDatePicker();
-      render();
     });
 
     render();
