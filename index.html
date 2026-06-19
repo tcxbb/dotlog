@@ -192,7 +192,6 @@
       overflow: hidden;
       margin-bottom: 8px;
       padding: 8px 0 12px;
-      border-bottom: 1px solid var(--border);
       user-select: none;
     }
 
@@ -346,12 +345,6 @@
     .fab svg {
       width: 20px;
       height: 20px;
-    }
-
-    .fab.is-open {
-      z-index: 500;
-      background: #888888;
-      transform: rotate(45deg);
     }
 
     .fab.is-hidden {
@@ -4070,9 +4063,9 @@
       clearTimeout(bottomSheetCloseTimer);
       bottomSheet.classList.remove("is-hidden");
       sheetOverlay.classList.remove("is-hidden");
+      fab.classList.add("is-hidden");
       requestAnimationFrame(() => {
         bottomSheet.classList.add("is-open");
-        fab.classList.add("is-open");
       });
       setTimeout(() => {
         if (bottomSheet.classList.contains("is-open")) entryInput.focus();
@@ -4082,7 +4075,6 @@
     function closeBottomSheet() {
       clearTimeout(bottomSheetCloseTimer);
       bottomSheet.classList.remove("is-open");
-      fab.classList.remove("is-open");
       if (bottomSheet.classList.contains("is-hidden")) {
         toggleBackfillPanel(false);
         return;
@@ -4091,6 +4083,7 @@
         bottomSheet.classList.add("is-hidden");
         sheetOverlay.classList.add("is-hidden");
         toggleBackfillPanel(false);
+        fab.classList.toggle("is-hidden", settingsMode !== "main" || !isToday(viewedDate));
       }, 300);
     }
 

@@ -1,4 +1,4 @@
-const CACHE_NAME = "dotlog-v0.7.10-sheet-date-overlay-tag-confirm";
+const CACHE_NAME = "dotlog-v0.7.10-fab-hidden-week-divider";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (event) => {
