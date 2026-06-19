@@ -509,6 +509,8 @@
       color: var(--text);
       padding: 7px 10px;
       font-size: 14px;
+      text-align: center;
+      cursor: pointer;
     }
 
     .entry-time-auto {
@@ -568,6 +570,7 @@
 
     .edit-input {
       width: 100%;
+      min-width: 0;
       border: 1px solid var(--border);
       border-radius: 6px;
       background: var(--paper);
@@ -863,7 +866,7 @@
     .ctx-overlay {
       position: fixed;
       inset: 0;
-      z-index: 500;
+      z-index: 10000;
       background: rgba(0, 0, 0, 0.06);
       -webkit-backdrop-filter: blur(1px);
       backdrop-filter: blur(1px);
@@ -883,7 +886,7 @@
 
     .ctx-menu {
       position: fixed;
-      z-index: 600;
+      z-index: 10001;
       left: 50%;
       width: 65%;
       max-width: 320px;
@@ -902,6 +905,124 @@
 
     .ctx-menu:not(.is-hidden) {
       animation: ctxMenuIn 0.18s cubic-bezier(0.32, 0.72, 0, 1);
+    }
+
+    .time-picker-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 12000;
+      background: rgba(26, 26, 26, 0.12);
+      -webkit-backdrop-filter: blur(1px);
+      backdrop-filter: blur(1px);
+    }
+
+    .time-picker {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      z-index: 12001;
+      width: min(280px, calc(100vw - 48px));
+      transform: translate(-50%, -50%);
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: rgba(255, 254, 251, 0.98);
+      box-shadow: 0 18px 48px rgba(26, 26, 26, 0.18);
+    }
+
+    .time-picker-title {
+      padding: 14px 16px 10px;
+      font-size: 15px;
+      font-weight: 600;
+      text-align: center;
+    }
+
+    .time-picker-columns {
+      position: relative;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      padding: 0 28px;
+    }
+
+    .time-picker-columns::after {
+      content: ":";
+      position: absolute;
+      top: 62px;
+      left: 50%;
+      color: var(--muted);
+      font-size: 18px;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+    }
+
+    .time-picker-column-wrap {
+      min-width: 0;
+    }
+
+    .time-picker-column-label {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--muted);
+      font-size: 11px;
+      text-align: center;
+    }
+
+    .time-picker-column {
+      height: 108px;
+      overflow-y: auto;
+      padding: 36px 0;
+      border-radius: 10px;
+      background: #F5F3EF;
+      scroll-snap-type: y mandatory;
+      scrollbar-width: none;
+      overscroll-behavior: contain;
+    }
+
+    .time-picker-column::-webkit-scrollbar {
+      display: none;
+    }
+
+    .time-picker-option {
+      display: block;
+      width: calc(100% - 12px);
+      height: 36px;
+      margin: 0 6px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 18px;
+      font-variant-numeric: tabular-nums;
+      scroll-snap-align: center;
+    }
+
+    .time-picker-option.is-selected {
+      background: var(--accent);
+      color: #FFFFFF;
+      font-weight: 600;
+    }
+
+    .time-picker-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      padding: 12px 16px 14px;
+    }
+
+    .time-picker-action {
+      height: 36px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .time-picker-action.is-primary {
+      border-color: var(--accent);
+      background: var(--accent);
+      color: #FFFFFF;
     }
 
     @keyframes ctxMenuIn {
@@ -1011,6 +1132,18 @@
       gap: 12px;
       margin: 4px 0 8px;
       padding: 14px;
+      width: 100%;
+      min-width: 0;
+    }
+
+    .edit-panel .form-line {
+      grid-template-columns: 58px minmax(0, 1fr);
+      width: 100%;
+    }
+
+    .edit-time-input {
+      text-align: center;
+      cursor: pointer;
     }
 
     .edit-panel .tag-picker {
@@ -1659,6 +1792,25 @@
       </button>
     </div>
 
+    <div class="time-picker-overlay is-hidden" id="timePickerOverlay"></div>
+    <section class="time-picker is-hidden" id="timePicker" role="dialog" aria-modal="true" aria-labelledby="timePickerTitle">
+      <div class="time-picker-title" id="timePickerTitle">选择时间</div>
+      <div class="time-picker-columns">
+        <div class="time-picker-column-wrap">
+          <span class="time-picker-column-label">时</span>
+          <div class="time-picker-column" id="timePickerHour" aria-label="小时"></div>
+        </div>
+        <div class="time-picker-column-wrap">
+          <span class="time-picker-column-label">分</span>
+          <div class="time-picker-column" id="timePickerMinute" aria-label="分钟"></div>
+        </div>
+      </div>
+      <div class="time-picker-actions">
+        <button class="time-picker-action" id="timePickerCancel" type="button">取消</button>
+        <button class="time-picker-action is-primary" id="timePickerConfirm" type="button">确定</button>
+      </div>
+    </section>
+
     <button class="fab" id="fab" type="button" aria-label="新增记录">
       <svg viewBox="0 0 20 20" fill="none" stroke="#FFFFFF" stroke-width="2" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
         <line x1="10" y1="4" x2="10" y2="16"/>
@@ -1682,7 +1834,7 @@
         >
         <div class="entry-time-row">
           <label class="entry-time-label" for="entryStartTime">开始时间</label>
-          <input class="entry-time-input" id="entryStartTime" type="time" aria-label="事件开始时间">
+          <input class="entry-time-input" id="entryStartTime" type="text" inputmode="none" readonly aria-label="事件开始时间">
           <button class="entry-time-auto" id="entryStartAuto" type="button">自动</button>
         </div>
         <div class="split-hint is-hidden" id="splitHint">检测到加号 · 拆分格式：主事件 + 次事件 时长（分钟）</div>
@@ -1746,6 +1898,13 @@
     const ctxMenu = document.querySelector("#ctxMenu");
     const ctxEdit = document.querySelector("#ctxEdit");
     const ctxDelete = document.querySelector("#ctxDelete");
+    const timePickerOverlay = document.querySelector("#timePickerOverlay");
+    const timePicker = document.querySelector("#timePicker");
+    const timePickerTitle = document.querySelector("#timePickerTitle");
+    const timePickerHour = document.querySelector("#timePickerHour");
+    const timePickerMinute = document.querySelector("#timePickerMinute");
+    const timePickerCancel = document.querySelector("#timePickerCancel");
+    const timePickerConfirm = document.querySelector("#timePickerConfirm");
     const tableTools = document.querySelector("#tableTools");
     const tableToggle = document.querySelector("#tableToggle");
     const exportIcs = document.querySelector("#exportIcs");
@@ -1787,6 +1946,9 @@
     let settingsMode = "main";
     let editingRecordIndex = null;
     let editDraft = null;
+    let timePickerTarget = null;
+    let timePickerValue = "00:00";
+    let timePickerScrollTimer = null;
     let editingCategoryIndex = null;
     let addingTagCategoryIndex = null;
     let editingTag = null;
@@ -2939,9 +3101,73 @@
     }
 
     function cancelEditingRecord() {
+      closeTimePicker();
       editingRecordIndex = null;
       editDraft = null;
       render();
+    }
+
+    function renderTimePickerColumn(column, count) {
+      column.innerHTML = "";
+      for (let value = 0; value < count; value += 1) {
+        const option = document.createElement("button");
+        option.className = "time-picker-option";
+        option.type = "button";
+        option.dataset.value = String(value);
+        option.textContent = String(value).padStart(2, "0");
+        option.addEventListener("click", () => selectTimePickerValue(column, value, true));
+        column.append(option);
+      }
+    }
+
+    function selectTimePickerValue(column, value, scroll = false) {
+      const max = column === timePickerHour ? 23 : 59;
+      const safeValue = Math.max(0, Math.min(max, value));
+      column.querySelectorAll(".time-picker-option").forEach((option) => {
+        option.classList.toggle("is-selected", Number(option.dataset.value) === safeValue);
+      });
+      const [hour, minute] = timePickerValue.split(":").map(Number);
+      timePickerValue = column === timePickerHour
+        ? `${String(safeValue).padStart(2, "0")}:${String(minute).padStart(2, "0")}`
+        : `${String(hour).padStart(2, "0")}:${String(safeValue).padStart(2, "0")}`;
+      if (scroll) column.scrollTo({ top: safeValue * 36, behavior: "smooth" });
+    }
+
+    function settleTimePickerColumn(column) {
+      clearTimeout(timePickerScrollTimer);
+      timePickerScrollTimer = setTimeout(() => {
+        selectTimePickerValue(column, Math.round(column.scrollTop / 36));
+      }, 80);
+    }
+
+    function openTimePicker(target, title = "选择时间") {
+      const fallback = formatTime(new Date());
+      timePickerTarget = target;
+      timePickerValue = isValidTimeInput(target.value) ? target.value : fallback;
+      timePickerTitle.textContent = title;
+      timePickerOverlay.classList.remove("is-hidden");
+      timePicker.classList.remove("is-hidden");
+      const [hour, minute] = timePickerValue.split(":").map(Number);
+      selectTimePickerValue(timePickerHour, hour);
+      selectTimePickerValue(timePickerMinute, minute);
+      requestAnimationFrame(() => {
+        timePickerHour.scrollTop = hour * 36;
+        timePickerMinute.scrollTop = minute * 36;
+      });
+    }
+
+    function closeTimePicker() {
+      timePickerOverlay.classList.add("is-hidden");
+      timePicker.classList.add("is-hidden");
+      timePickerTarget = null;
+    }
+
+    function confirmTimePicker() {
+      if (!timePickerTarget) return;
+      const target = timePickerTarget;
+      target.value = timePickerValue;
+      closeTimePicker();
+      target.dispatchEvent(new Event("input", { bubbles: true }));
     }
 
     function saveEditedRecord(index) {
@@ -2999,8 +3225,10 @@
       const startTimeLabel = document.createElement("span");
       startTimeLabel.textContent = "开始：";
       const startTimeInput = document.createElement("input");
-      startTimeInput.className = "edit-input";
-      startTimeInput.type = "time";
+      startTimeInput.className = "edit-input edit-time-input";
+      startTimeInput.type = "text";
+      startTimeInput.inputMode = "none";
+      startTimeInput.readOnly = true;
       startTimeInput.value = editDraft.startTime;
       startTimeLine.append(startTimeLabel, startTimeInput);
 
@@ -3009,9 +3237,10 @@
       const timeLabel = document.createElement("span");
       timeLabel.textContent = "结束：";
       const timeInput = document.createElement("input");
-      timeInput.className = "edit-input";
+      timeInput.className = "edit-input edit-time-input";
       timeInput.type = "text";
-      timeInput.inputMode = "numeric";
+      timeInput.inputMode = "none";
+      timeInput.readOnly = true;
       timeInput.value = editDraft.time;
       timeLine.append(timeLabel, timeInput);
 
@@ -3104,10 +3333,12 @@
         editDraft.startTime = startTimeInput.value;
         validateEditPanel();
       });
+      startTimeInput.addEventListener("click", () => openTimePicker(startTimeInput, "选择开始时间"));
       timeInput.addEventListener("input", () => {
         editDraft.time = timeInput.value.trim();
         validateEditPanel();
       });
+      timeInput.addEventListener("click", () => openTimePicker(timeInput, "选择结束时间"));
       textInput.addEventListener("input", () => {
         editDraft.text = textInput.value;
         validateEditPanel();
@@ -4676,6 +4907,14 @@
       entryStartTimeTouched = true;
     });
 
+    entryStartTime.addEventListener("click", () => openTimePicker(entryStartTime, "选择开始时间"));
+
+    timePickerHour.addEventListener("scroll", () => settleTimePickerColumn(timePickerHour), { passive: true });
+    timePickerMinute.addEventListener("scroll", () => settleTimePickerColumn(timePickerMinute), { passive: true });
+    timePickerOverlay.addEventListener("click", closeTimePicker);
+    timePickerCancel.addEventListener("click", closeTimePicker);
+    timePickerConfirm.addEventListener("click", confirmTimePicker);
+
     entryStartAuto.addEventListener("click", () => {
       entryStartTimeTouched = false;
       refreshEntryStartTime(true);
@@ -4769,6 +5008,12 @@
 
     todayBtn.addEventListener("click", () => setViewedDate(new Date()));
 
+    document.addEventListener("pointerdown", (event) => {
+      if (editingRecordIndex === null) return;
+      if (event.target.closest(".edit-panel, .time-picker, .time-picker-overlay")) return;
+      cancelEditingRecord();
+    });
+
     document.addEventListener("click", () => {
       closeCalendarMenu();
     });
@@ -4779,8 +5024,12 @@
         closeBottomSheet();
         closeCalendarMenu();
         closeCalendarImportPanel();
+        closeTimePicker();
       }
     });
+
+    renderTimePickerColumn(timePickerHour, 24);
+    renderTimePickerColumn(timePickerMinute, 60);
 
     render();
     if (hasGistSettings()) {
