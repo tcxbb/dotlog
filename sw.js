@@ -1,4 +1,4 @@
-const CACHE_NAME = "dotlog-v0.7.10-entry-classification";
+const CACHE_NAME = "dotlog-v0.7.10-cross-day-boundary";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (event) => {

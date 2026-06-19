@@ -1840,13 +1840,22 @@
       return end - start;
     }
 
-    function summaryTextForRecords(records) {
+    function durationFromPreviousDay(startTime, endTime) {
+      return (24 * 60 - timeToMinutes(startTime)) + timeToMinutes(endTime);
+    }
+
+    function summaryTextForRecords(records, date) {
       if (records.length === 0) return "";
-      if (records.length === 1) return "1 条 · —";
 
       const chronologicalRecords = [...records].reverse();
       const startRecord = chronologicalRecords[0];
       const endRecord = chronologicalRecords[chronologicalRecords.length - 1];
+      const previousDayBoundary = getPreviousDayBoundary(date);
+      if (previousDayBoundary) {
+        return `${records.length} 条 · ${formatDuration(durationFromPreviousDay(previousDayBoundary.record.time, endRecord.time))}`;
+      }
+
+      if (records.length === 1) return "1 条 · —";
       return `${records.length} 条 · ${formatDuration(durationBetween(startRecord.time, endRecord.time))}`;
     }
 
@@ -2429,6 +2438,18 @@
       } catch {
         return [];
       }
+    }
+
+    function getPreviousDayBoundary(date) {
+      const previousDate = addDays(date, -1);
+      const previousRecords = loadRecords(previousDate);
+      if (previousRecords.length === 0) return null;
+
+      const record = previousRecords.reduce((latest, current) => {
+        return timeToMinutes(current.time) > timeToMinutes(latest.time) ? current : latest;
+      });
+
+      return { date: previousDate, record };
     }
 
     function saveRecords(date, records) {
@@ -3491,7 +3512,7 @@
 
       renderWeekNav();
       fab.classList.toggle("is-hidden", !viewingToday);
-      monthMeta.textContent = summaryTextForRecords(records);
+      monthMeta.textContent = summaryTextForRecords(records, viewedDate);
       updateSyncIndicators();
 
       if (!tableExpanded) {
@@ -3515,6 +3536,7 @@
       const list = document.createElement("ul");
       list.className = "list";
       const groups = groupRecordsByPeriod(records);
+      const previousDayBoundary = getPreviousDayBoundary(viewedDate);
 
       periodOrder.forEach((period) => {
         if (!groups[period]?.length) return;
@@ -3535,9 +3557,15 @@
         const displayCategory = classificationDraft ? classificationDraft.category : record.category;
         const displayTags = classificationDraft ? classificationDraft.tags : record.tags;
         const displayColor = displayCategory ? categoryColor(displayCategory) : null;
-        const hasInterval = index < records.length - 1;
+        const isCrossDayInterval = index === records.length - 1 && Boolean(previousDayBoundary);
+        const intervalStart = index < records.length - 1
+          ? records[index + 1].time
+          : previousDayBoundary?.record.time || null;
+        const hasInterval = Boolean(intervalStart);
         const durationText = hasInterval
-          ? formatDuration(durationBetween(records[index + 1].time, record.time))
+          ? formatDuration(isCrossDayInterval
+            ? durationFromPreviousDay(intervalStart, record.time)
+            : durationBetween(intervalStart, record.time))
           : "—";
 
         const bar = document.createElement("div");
@@ -3596,7 +3624,8 @@
 
         const startTime = document.createElement("span");
         startTime.className = "record-time-start";
-        startTime.textContent = hasInterval ? records[index + 1].time : record.time;
+        startTime.textContent = intervalStart || record.time;
+        if (isCrossDayInterval) startTime.title = "前一天最后记录时间";
 
         if (hasInterval) {
           const endTime = document.createElement("span");
@@ -3667,17 +3696,24 @@
       recordsArea.replaceChildren(list);
     }
 
-    function buildTimeRows(records) {
+    function buildTimeRows(records, date) {
       const chronologicalRecords = [...records].reverse();
+      const previousDayBoundary = getPreviousDayBoundary(date);
       let totalMinutes = 0;
 
-      const rows = chronologicalRecords.slice(1).map((record, index) => {
-        const previousRecord = chronologicalRecords[index];
-        const duration = durationBetween(previousRecord.time, record.time);
+      const rows = chronologicalRecords.map((record, index) => {
+        const previousRecord = index === 0
+          ? previousDayBoundary?.record || null
+          : chronologicalRecords[index - 1];
+        if (!previousRecord) return null;
+
+        const duration = index === 0 && previousDayBoundary
+          ? durationFromPreviousDay(previousRecord.time, record.time)
+          : durationBetween(previousRecord.time, record.time);
         totalMinutes += duration;
 
         return {
-          index: index + 1,
+          index: index + (previousDayBoundary ? 1 : 0),
           start: previousRecord.time,
           end: record.time,
           duration,
@@ -3688,10 +3724,9 @@
           isBackfill: record.isBackfill,
           isSplit: record.isSplit
         };
-      });
+      }).filter(Boolean);
 
       return {
-        startRecord: chronologicalRecords[0],
         rows,
         totalMinutes
       };
@@ -3732,13 +3767,13 @@
     }
 
     function renderTimeTable(records) {
-      if (records.length < 2) {
+      const tableData = buildTimeRows(records, viewedDate);
+      if (tableData.rows.length === 0) {
         tableArea.replaceChildren();
         tableExpanded = false;
         return;
       }
 
-      const tableData = buildTimeRows(records);
       const table = document.createElement("div");
       table.className = "summary-table";
 
@@ -3847,19 +3882,22 @@
 
     function buildCalendarEvents(records, date) {
       const chronologicalRecords = [...records].reverse();
+      const previousDayBoundary = getPreviousDayBoundary(date);
       const eventsByCategory = {};
       let eventCount = 0;
 
-      chronologicalRecords.slice(1).forEach((record, index) => {
+      chronologicalRecords.forEach((record, index) => {
+        const previousRecord = index === 0
+          ? previousDayBoundary?.record || null
+          : chronologicalRecords[index - 1];
+        if (!previousRecord) return;
         if (!record.category) return;
 
-        const previousRecord = chronologicalRecords[index];
-        const crossesMidnight = timeToMinutes(record.time) < timeToMinutes(previousRecord.time);
-        const endDate = crossesMidnight ? addDays(date, 1) : date;
+        const startDate = index === 0 && previousDayBoundary ? previousDayBoundary.date : date;
         const event = [
           "BEGIN:VEVENT",
-          `DTSTART;TZID=Asia/Shanghai:${formatIcsDate(date, previousRecord.time)}`,
-          `DTEND;TZID=Asia/Shanghai:${formatIcsDate(endDate, record.time)}`,
+          `DTSTART;TZID=Asia/Shanghai:${formatIcsDate(startDate, previousRecord.time)}`,
+          `DTEND;TZID=Asia/Shanghai:${formatIcsDate(date, record.time)}`,
           `SUMMARY:${escapeIcsText(summaryForRecord(record))}`,
           record.note ? `DESCRIPTION:${escapeIcsText(record.note)}` : null,
           `UID:${createEventUid()}@时间打点器`,
@@ -4009,11 +4047,6 @@
     function openCalendarImportPanel() {
       const records = loadRecords(viewedDate);
 
-      if (records.length < 2) {
-        alert("至少需要 2 条记录才能导入");
-        return;
-      }
-
       if (!records.some((record) => record.category)) {
         alert("请先为至少一条记录选择分类");
         return;
@@ -4021,7 +4054,7 @@
 
       const { eventsByCategory, eventCount } = buildCalendarEvents(records, viewedDate);
       if (eventCount === 0) {
-        alert("请先为至少一条记录选择分类");
+        alert("当前没有可导入的完整时间区间");
         return;
       }
 
@@ -4031,11 +4064,6 @@
 
     async function exportIcsFiles() {
       const records = loadRecords(viewedDate);
-
-      if (records.length < 2) {
-        alert("至少需要 2 条记录才能导出");
-        return;
-      }
 
       if (!records.some((record) => record.category)) {
         alert("请先为至少一条记录选择分类，再导出");
@@ -4052,7 +4080,7 @@
       const categoriesToExport = Object.keys(eventsByCategory);
 
       if (eventCount === 0) {
-        alert("请先为至少一条记录选择分类，再导出");
+        alert("当前没有可导出的完整时间区间");
         return;
       }
 
@@ -4352,8 +4380,8 @@
     tableToggle.addEventListener("click", () => {
       const records = loadRecords(viewedDate);
 
-      if (!tableExpanded && records.length < 2) {
-        alert("至少需要 2 条记录才能生成表格");
+      if (!tableExpanded && buildTimeRows(records, viewedDate).rows.length === 0) {
+        alert("至少需要一个完整时间区间才能生成表格");
         return;
       }
 
