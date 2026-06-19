@@ -801,9 +801,9 @@
       position: fixed;
       inset: 0;
       z-index: 500;
-      background: rgba(0, 0, 0, 0.25);
-      -webkit-backdrop-filter: blur(6px);
-      backdrop-filter: blur(6px);
+      background: rgba(0, 0, 0, 0.12);
+      -webkit-backdrop-filter: blur(2px);
+      backdrop-filter: blur(2px);
       transition: opacity 0.2s ease;
     }
 
@@ -1270,6 +1270,59 @@
       font-weight: 600;
     }
 
+    .config-category-identity {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .color-swatch-btn {
+      width: 24px;
+      height: 24px;
+      flex-shrink: 0;
+      border: 2px solid rgba(255, 255, 255, 0.6);
+      border-radius: 999px;
+      box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12);
+      cursor: pointer;
+      transition: transform 0.15s ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .color-swatch-btn:active {
+      transform: scale(0.9);
+    }
+
+    .color-picker-panel {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 12px 0 8px;
+    }
+
+    .color-picker-panel.is-hidden {
+      display: none;
+    }
+
+    .color-option {
+      width: 32px;
+      height: 32px;
+      border: 2px solid rgba(255, 255, 255, 0.6);
+      border-radius: 999px;
+      box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1);
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .color-option:active {
+      transform: scale(0.9);
+    }
+
+    .color-option.is-selected {
+      box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px rgba(0, 0, 0, 0.35);
+    }
+
     .config-actions {
       display: flex;
       gap: 10px;
@@ -1669,6 +1722,7 @@
     let addingTagCategoryIndex = null;
     let editingTag = null;
     let addingCategory = false;
+    let openColorPickerIndex = null;
     let selectedNewCategoryColor = "#7B8EC8";
     let applyingRemoteData = false;
     let syncTimer = null;
@@ -1682,10 +1736,19 @@
 
     const gistDataFile = "dotlog_data.json";
 
-    const colorPresets = [
-      "#7B8EC8", "#8DC88B", "#E8A87C", "#6BB5D5",
-      "#D56B9A", "#C87B7B", "#A57BC8", "#C8C87B",
-      "#B0B0B0", "#6BC8B8", "#C8A06B", "#8B8BC8"
+    const presetColors = [
+      { value: "#7B8EC8", label: "睡眠蓝" },
+      { value: "#8DC88B", label: "生活绿" },
+      { value: "#E8A87C", label: "训练橙" },
+      { value: "#6BB5D5", label: "输入青" },
+      { value: "#D56B9A", label: "输出粉" },
+      { value: "#C87B7B", label: "工作红" },
+      { value: "#A57BC8", label: "Meta紫" },
+      { value: "#C8C87B", label: "娱乐黄" },
+      { value: "#B0B0B0", label: "黑洞灰" },
+      { value: "#6BC8B8", label: "薄荷绿" },
+      { value: "#C8A06B", label: "暖棕" },
+      { value: "#8B8BC8", label: "薰衣草" }
     ];
 
     const defaultCategoryConfig = {
@@ -2930,6 +2993,7 @@
       addingTagCategoryIndex = null;
       editingTag = null;
       addingCategory = false;
+      openColorPickerIndex = null;
       pageHeader.classList.remove("is-hidden");
       tableTools.classList.remove("is-hidden");
       recordsArea.classList.remove("is-hidden");
@@ -2993,7 +3057,7 @@
       const category = config.categories[index];
       if (!category) return;
 
-      if (!confirm(`删除「${category.name}」分类？该分类下的所有标签也会一并删除。已打过此分类标记的历史记录不受影响。`)) {
+      if (!confirm(`确认删除分类「${category.name}」？\n该分类下的所有标签也将一并删除。`)) {
         return;
       }
 
@@ -3002,6 +3066,7 @@
       editingCategoryIndex = null;
       addingTagCategoryIndex = null;
       editingTag = null;
+      openColorPickerIndex = null;
       renderSettingsPage();
     }
 
@@ -3052,9 +3117,40 @@
       const category = config.categories[categoryIndex];
       if (!category) return;
 
+      const tag = category.tags[tagIndex];
+      if (tag === undefined || !confirm(`确认删除标签「${tag}」？`)) return;
+
       category.tags.splice(tagIndex, 1);
       saveCategoryConfig(config);
       renderSettingsPage();
+    }
+
+    function buildColorPicker(categoryIndex, currentColor) {
+      const panel = document.createElement("div");
+      panel.className = "color-picker-panel";
+      panel.classList.toggle("is-hidden", openColorPickerIndex !== categoryIndex);
+      panel.dataset.categoryIndex = String(categoryIndex);
+
+      presetColors.forEach(({ value, label }) => {
+        const option = document.createElement("button");
+        option.className = "color-option";
+        option.classList.toggle("is-selected", value === currentColor);
+        option.type = "button";
+        option.style.backgroundColor = value;
+        option.setAttribute("aria-label", `${label} ${value}`);
+        option.addEventListener("click", () => {
+          const config = loadCategoryConfig();
+          const targetCategory = config.categories[categoryIndex];
+          if (!targetCategory) return;
+          targetCategory.color = value;
+          saveCategoryConfig(config);
+          openColorPickerIndex = null;
+          renderSettingsPage();
+        });
+        panel.append(option);
+      });
+
+      return panel;
     }
 
     function createSettingsCategory(category, categoryIndex) {
@@ -3065,6 +3161,21 @@
       head.className = "config-category-head";
 
       const nameWrap = document.createElement("div");
+      nameWrap.className = "config-category-identity";
+
+      const swatchButton = document.createElement("button");
+      swatchButton.className = "color-swatch-btn";
+      swatchButton.type = "button";
+      swatchButton.dataset.categoryIndex = String(categoryIndex);
+      swatchButton.style.backgroundColor = category.color;
+      swatchButton.setAttribute("aria-label", `选择「${category.name}」的颜色`);
+      swatchButton.setAttribute("aria-expanded", String(openColorPickerIndex === categoryIndex));
+      swatchButton.addEventListener("click", () => {
+        openColorPickerIndex = openColorPickerIndex === categoryIndex ? null : categoryIndex;
+        renderSettingsPage();
+      });
+      nameWrap.append(swatchButton);
+
       if (editingCategoryIndex === categoryIndex) {
         nameWrap.append(createInlineInput(
           category.name,
@@ -3101,6 +3212,8 @@
 
       actions.append(editButton, deleteButton);
       head.append(nameWrap, actions);
+
+      const colorPicker = buildColorPicker(categoryIndex, category.color);
 
       const tags = document.createElement("div");
       tags.className = "config-tags";
@@ -3160,7 +3273,7 @@
         tags.append(addTagButton);
       }
 
-      item.append(head, tags);
+      item.append(head, colorPicker, tags);
       return item;
     }
 
@@ -3172,7 +3285,7 @@
         addButton.textContent = "+ 添加新分类";
         addButton.addEventListener("click", () => {
           addingCategory = true;
-          selectedNewCategoryColor = colorPresets[0];
+          selectedNewCategoryColor = presetColors[0].value;
           renderSettingsPage();
         });
         container.append(addButton);
@@ -3189,15 +3302,15 @@
 
       const swatches = document.createElement("div");
       swatches.className = "color-swatches";
-      colorPresets.forEach((color) => {
+      presetColors.forEach(({ value, label }) => {
         const swatch = document.createElement("button");
         swatch.className = "color-swatch";
         swatch.type = "button";
-        swatch.style.backgroundColor = color;
-        swatch.setAttribute("aria-label", color);
-        swatch.classList.toggle("is-selected", color === selectedNewCategoryColor);
+        swatch.style.backgroundColor = value;
+        swatch.setAttribute("aria-label", `${label} ${value}`);
+        swatch.classList.toggle("is-selected", value === selectedNewCategoryColor);
         swatch.addEventListener("click", () => {
-          selectedNewCategoryColor = color;
+          selectedNewCategoryColor = value;
           renderSettingsPage();
         });
         swatches.append(swatch);

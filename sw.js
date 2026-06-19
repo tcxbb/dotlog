@@ -1,4 +1,4 @@
-const CACHE_NAME = "dotlog-v0.7.8-input-spacing-period-summary";
+const CACHE_NAME = "dotlog-v0.7.9-category-colors-confirm-overlay";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (event) => {
