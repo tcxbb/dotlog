@@ -2165,9 +2165,7 @@
       records[index].tags = [];
       saveRecords(date, records);
       delete classificationDrafts[index];
-      openCategoryIndexes = keepPickerOpen
-        ? [index]
-        : openCategoryIndexes.filter((itemIndex) => itemIndex !== index);
+      openCategoryIndexes = [...new Set([...openCategoryIndexes, index])];
       openTagIndexes = category
         ? [...new Set([...openTagIndexes, index])]
         : openTagIndexes.filter((itemIndex) => itemIndex !== index);
@@ -2254,7 +2252,6 @@
 
           draft.category = category.name;
           draft.tags = [];
-          openCategoryIndexes = openCategoryIndexes.filter((itemIndex) => itemIndex !== index);
           openTagIndexes = [...new Set([...openTagIndexes, index])];
           render();
         });
@@ -3066,8 +3063,14 @@
         const labelStack = document.createElement("span");
         labelStack.className = "label-stack";
 
-        if (record.category) {
-          const categoryBadge = createCategoryBadge(record.category, {
+        const classificationDraft = isCategoryOpen(index) || isTagOpen(index)
+          ? getClassificationDraft(index, record)
+          : classificationDrafts[index];
+        const displayCategory = classificationDraft ? classificationDraft.category : record.category;
+        const displayTags = classificationDraft ? classificationDraft.tags : record.tags;
+
+        if (displayCategory) {
+          const categoryBadge = createCategoryBadge(displayCategory, {
             button: true
           });
           categoryBadge.addEventListener("click", () => {
@@ -3075,8 +3078,8 @@
           });
           labelStack.append(categoryBadge);
 
-          record.tags.forEach((tag) => {
-            labelStack.append(createTagBadge(tag, record.category, index, {
+          displayTags.forEach((tag) => {
+            labelStack.append(createTagBadge(tag, displayCategory, index, {
               button: true
             }));
             const tagBadge = labelStack.lastElementChild;
