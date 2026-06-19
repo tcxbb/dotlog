@@ -45,7 +45,7 @@
       padding: 56px 0 100px;
     }
 
-    .title {
+    .app-title {
       margin: 0;
       font-family: Georgia, 'Times New Roman', serif;
       font-size: 1.6rem;
@@ -53,18 +53,19 @@
       letter-spacing: 0;
     }
 
-    .top-bar {
-      display: block;
-      padding-bottom: 10px;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .top-actions {
+    .page-header {
       display: flex;
       align-items: center;
-      justify-content: flex-end;
-      gap: 12px;
-      margin-top: 4px;
+      justify-content: space-between;
+      padding: 20px 0 12px;
+      border-bottom: 0;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
     }
 
     .icon-button,
@@ -668,8 +669,8 @@
       grid-template-columns: 4px minmax(0, 1fr) auto;
       column-gap: 12px;
       align-items: start;
-      padding: 14px 0;
-      border-bottom: 1px solid var(--border);
+      padding: 12px 0;
+      border-bottom: 0;
       -webkit-user-select: none;
       user-select: none;
       -webkit-touch-callout: none;
@@ -1374,9 +1375,9 @@
 <body>
   <main class="page">
     <header>
-      <div class="top-bar">
-        <h1 class="title">Dotlog</h1>
-        <div class="top-actions">
+      <div class="page-header">
+        <h1 class="app-title">Dotlog</h1>
+        <div class="header-actions">
           <button class="icon-button" id="tableToggle" type="button" title="生成今日时间记录表" aria-label="生成今日时间记录表">
             <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
               <rect x="3" y="3" width="14" height="14" rx="2"/>
@@ -3352,7 +3353,6 @@
         const startTime = document.createElement("span");
         startTime.className = "record-time-start";
         startTime.textContent = hasInterval ? records[index + 1].time : record.time;
-        time.append(startTime);
 
         if (hasInterval) {
           const endTime = document.createElement("span");
@@ -3360,6 +3360,8 @@
           endTime.textContent = record.time;
           time.append(endTime);
         }
+
+        time.append(startTime);
 
         if (isCategoryOpen(index)) {
           body.append(createCategoryPicker(record, index));
@@ -4002,6 +4004,12 @@
       entryInput.value = "";
       updateSplitHint();
       render();
+      requestAnimationFrame(() => {
+        const firstPicker = document.querySelector(".category-picker");
+        if (firstPicker) {
+          firstPicker.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      });
       closeBottomSheet();
     });
 
