@@ -381,9 +381,10 @@
       width: 100%;
       max-width: 680px;
       max-height: calc(100vh - 24px);
-      overflow-y: auto;
+      max-height: calc(100dvh - 12px);
       margin: 0 auto;
       overflow-y: auto;
+      overscroll-behavior: contain;
       border-radius: 16px 16px 0 0;
       background: var(--paper);
       padding: 12px 20px calc(40px + env(safe-area-inset-bottom));
@@ -488,12 +489,41 @@
       line-height: 1.5;
     }
 
+    .entry-time-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .entry-time-label {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .entry-time-input {
+      min-width: 112px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg);
+      color: var(--text);
+      padding: 7px 10px;
+      font-size: 14px;
+    }
+
+    .entry-time-auto {
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      padding: 6px 4px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
     .entry-classification {
       display: grid;
       gap: 10px;
       margin-top: 12px;
-      padding-top: 12px;
-      border-top: 1px solid var(--border);
     }
 
     .entry-classification-row {
@@ -742,6 +772,23 @@
       align-self: stretch;
     }
 
+    .record-gap {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      min-height: 20px;
+      padding: 1px 0;
+      color: var(--muted);
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    .record-gap-duration {
+      white-space: nowrap;
+    }
+
     .record-body {
       display: flex;
       flex-direction: column;
@@ -825,6 +872,13 @@
 
     .ctx-overlay.is-hidden {
       display: none;
+    }
+
+    .ctx-overlay,
+    .ctx-menu {
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
     }
 
     .ctx-menu {
@@ -1626,6 +1680,11 @@
           autocomplete="off"
           enterkeyhint="done"
         >
+        <div class="entry-time-row">
+          <label class="entry-time-label" for="entryStartTime">开始时间</label>
+          <input class="entry-time-input" id="entryStartTime" type="time" aria-label="事件开始时间">
+          <button class="entry-time-auto" id="entryStartAuto" type="button">自动</button>
+        </div>
         <div class="split-hint is-hidden" id="splitHint">检测到加号 · 拆分格式：主事件 + 次事件 时长（分钟）</div>
         <div class="entry-classification" id="entryClassification"></div>
         <div class="sheet-actions">
@@ -1650,12 +1709,8 @@
           </span>
         </label>
         <label class="form-line">
-          <span>补录时间：</span>
+          <span>结束时间：</span>
           <input class="edit-input" id="backfillTime" type="text" inputmode="numeric" placeholder="HH:MM">
-        </label>
-        <label class="form-line">
-          <span>事件描述：</span>
-          <input class="edit-input" id="backfillText" type="text" placeholder="发生了什么？">
         </label>
         <div class="field-error is-hidden" id="backfillError">请输入正确时间格式 HH:MM</div>
         <div class="panel-actions">
@@ -1670,6 +1725,8 @@
   <script>
     const entryForm = document.querySelector("#entryForm");
     const entryInput = document.querySelector("#entryInput");
+    const entryStartTime = document.querySelector("#entryStartTime");
+    const entryStartAuto = document.querySelector("#entryStartAuto");
     const entryClassification = document.querySelector("#entryClassification");
     const insertPlusBtn = document.querySelector("#insertPlus");
     const backfillToggle = document.querySelector("#backfillToggle");
@@ -1678,7 +1735,6 @@
     const backfillMonth = document.querySelector("#backfillMonth");
     const backfillDay = document.querySelector("#backfillDay");
     const backfillTime = document.querySelector("#backfillTime");
-    const backfillText = document.querySelector("#backfillText");
     const backfillError = document.querySelector("#backfillError");
     const confirmBackfill = document.querySelector("#confirmBackfill");
     const cancelBackfill = document.querySelector("#cancelBackfill");
@@ -1722,6 +1778,7 @@
     let openTagIndexes = [];
     let classificationDrafts = {};
     let entryClassificationDraft = { category: null, tags: [] };
+    let entryStartTimeTouched = false;
     let exportStatusTimer = null;
     let bottomSheetCloseTimer = null;
     let ctxTargetIndex = null;
@@ -1855,17 +1912,12 @@
 
     function summaryTextForRecords(records, date) {
       if (records.length === 0) return "";
-
-      const chronologicalRecords = [...records].reverse();
-      const startRecord = chronologicalRecords[0];
-      const endRecord = chronologicalRecords[chronologicalRecords.length - 1];
-      const previousDayBoundary = getPreviousDayBoundary(date);
-      if (previousDayBoundary) {
-        return `${records.length} 条 · ${formatDuration(durationFromPreviousDay(previousDayBoundary.record.time, endRecord.time))}`;
-      }
-
-      if (records.length === 1) return "1 条 · —";
-      return `${records.length} 条 · ${formatDuration(durationBetween(startRecord.time, endRecord.time))}`;
+      const totalMinutes = records.reduce((total, record, index) => {
+        return total + (getRecordInterval(records, index, date)?.duration || 0);
+      }, 0);
+      return totalMinutes > 0
+        ? `${records.length} 条 · ${formatDuration(totalMinutes)}`
+        : `${records.length} 条 · —`;
     }
 
     function getTimePeriod(time) {
@@ -2184,6 +2236,7 @@
     function normalizeRecord(record) {
       return {
         time: record.time,
+        startTime: isValidTimeInput(record.startTime || "") ? record.startTime : null,
         text: record.text,
         category: record.category || null,
         note: record.note || null,
@@ -2461,6 +2514,57 @@
       return { date: previousDate, record };
     }
 
+    function getDefaultStartTime(date, endTime) {
+      if (!isValidTimeInput(endTime)) return "";
+      const endMinutes = timeToMinutes(endTime);
+      const previousRecord = loadRecords(date)
+        .filter((record) => timeToMinutes(record.time) < endMinutes)
+        .sort((first, second) => timeToMinutes(second.time) - timeToMinutes(first.time))[0];
+
+      if (previousRecord) return previousRecord.time;
+      return getPreviousDayBoundary(date)?.record.time || endTime;
+    }
+
+    function getRecordInterval(records, index, date) {
+      const record = records[index];
+      if (!record) return null;
+
+      const previousDayBoundary = index === records.length - 1 ? getPreviousDayBoundary(date) : null;
+      const previousRecord = index < records.length - 1
+        ? records[index + 1]
+        : previousDayBoundary?.record || null;
+      const startTime = record.startTime || previousRecord?.time || null;
+      if (!startTime) return null;
+
+      const isCrossDay = index === records.length - 1
+        && (record.startTime
+          ? timeToMinutes(startTime) > timeToMinutes(record.time)
+          : Boolean(previousDayBoundary));
+      const duration = isCrossDay
+        ? durationFromPreviousDay(startTime, record.time)
+        : durationBetween(startTime, record.time);
+
+      let gapMinutes = 0;
+      if (record.startTime && previousRecord) {
+        if (index < records.length - 1) {
+          gapMinutes = Math.max(0, timeToMinutes(startTime) - timeToMinutes(previousRecord.time));
+        } else if (isCrossDay) {
+          gapMinutes = Math.max(0, timeToMinutes(startTime) - timeToMinutes(previousRecord.time));
+        } else {
+          gapMinutes = durationFromPreviousDay(previousRecord.time, startTime);
+        }
+      }
+
+      return {
+        startTime,
+        endTime: record.time,
+        duration,
+        gapMinutes,
+        isCrossDay,
+        startDate: isCrossDay ? addDays(date, -1) : date
+      };
+    }
+
     function saveRecords(date, records) {
       localStorage.setItem(storageKey(date), JSON.stringify(records));
       markLocalDataChanged();
@@ -2642,6 +2746,7 @@
     }
 
     function openCtxMenu(index, record, recordEl) {
+      window.getSelection()?.removeAllRanges();
       ctxTargetIndex = index;
       ctxTargetRecord = record;
       ctxOverlay.classList.remove("is-hidden");
@@ -2816,8 +2921,10 @@
     }
 
     function startEditingRecord(index, record) {
+      const interval = getRecordInterval(loadRecords(viewedDate), index, viewedDate);
       editingRecordIndex = index;
       editDraft = {
+        startTime: record.startTime || interval?.startTime || record.time || "",
         time: record.time || "",
         text: record.text || "",
         note: record.note || "",
@@ -2838,7 +2945,8 @@
     }
 
     function saveEditedRecord(index) {
-      if (!editDraft || !isValidTimeInput(editDraft.time) || !editDraft.text.trim()) return;
+      if (!editDraft || !isValidTimeInput(editDraft.startTime) || !isValidTimeInput(editDraft.time) || !editDraft.text.trim()) return;
+      if (!validateEntryInterval(viewedDate, editDraft.startTime, editDraft.time)) return;
 
       const records = loadRecords(viewedDate);
       const original = records[index];
@@ -2851,6 +2959,7 @@
       }
 
       records[index] = {
+        startTime: editDraft.startTime,
         time: editDraft.time,
         text: editDraft.text.trim(),
         category: editDraft.category || null,
@@ -2885,10 +2994,20 @@
       const panel = document.createElement("div");
       panel.className = "edit-panel";
 
+      const startTimeLine = document.createElement("label");
+      startTimeLine.className = "form-line";
+      const startTimeLabel = document.createElement("span");
+      startTimeLabel.textContent = "开始：";
+      const startTimeInput = document.createElement("input");
+      startTimeInput.className = "edit-input";
+      startTimeInput.type = "time";
+      startTimeInput.value = editDraft.startTime;
+      startTimeLine.append(startTimeLabel, startTimeInput);
+
       const timeLine = document.createElement("label");
       timeLine.className = "form-line";
       const timeLabel = document.createElement("span");
-      timeLabel.textContent = "时间：";
+      timeLabel.textContent = "结束：";
       const timeInput = document.createElement("input");
       timeInput.className = "edit-input";
       timeInput.type = "text";
@@ -2972,13 +3091,19 @@
       cancelButton.textContent = "取消";
 
       function validateEditPanel() {
+        const validStartTime = isValidTimeInput(editDraft.startTime);
         const validTime = isValidTimeInput(editDraft.time);
         const validText = Boolean(editDraft.text.trim());
+        startTimeInput.classList.toggle("is-invalid", !validStartTime);
         timeInput.classList.toggle("is-invalid", !validTime);
-        error.classList.toggle("is-hidden", validTime);
-        saveButton.disabled = !validTime || !validText;
+        error.classList.toggle("is-hidden", validStartTime && validTime);
+        saveButton.disabled = !validStartTime || !validTime || !validText;
       }
 
+      startTimeInput.addEventListener("input", () => {
+        editDraft.startTime = startTimeInput.value;
+        validateEditPanel();
+      });
       timeInput.addEventListener("input", () => {
         editDraft.time = timeInput.value.trim();
         validateEditPanel();
@@ -2994,7 +3119,7 @@
       cancelButton.addEventListener("click", cancelEditingRecord);
 
       actions.append(saveButton, cancelButton);
-      panel.append(timeLine, textLine, noteLine, error, categoryRow, tagRow, actions);
+      panel.append(startTimeLine, timeLine, textLine, noteLine, error, categoryRow, tagRow, actions);
       validateEditPanel();
 
       setTimeout(() => textInput.focus(), 0);
@@ -3545,7 +3670,6 @@
       const list = document.createElement("ul");
       list.className = "list";
       const groups = groupRecordsByPeriod(records);
-      const previousDayBoundary = getPreviousDayBoundary(viewedDate);
 
       periodOrder.forEach((period) => {
         if (!groups[period]?.length) return;
@@ -3566,16 +3690,8 @@
         const displayCategory = classificationDraft ? classificationDraft.category : record.category;
         const displayTags = classificationDraft ? classificationDraft.tags : record.tags;
         const displayColor = displayCategory ? categoryColor(displayCategory) : null;
-        const isCrossDayInterval = index === records.length - 1 && Boolean(previousDayBoundary);
-        const intervalStart = index < records.length - 1
-          ? records[index + 1].time
-          : previousDayBoundary?.record.time || null;
-        const hasInterval = Boolean(intervalStart);
-        const durationText = hasInterval
-          ? formatDuration(isCrossDayInterval
-            ? durationFromPreviousDay(intervalStart, record.time)
-            : durationBetween(intervalStart, record.time))
-          : "—";
+        const interval = getRecordInterval(records, index, viewedDate);
+        const durationText = interval ? formatDuration(interval.duration) : "—";
 
         const bar = document.createElement("div");
         bar.className = "record-bar";
@@ -3633,10 +3749,10 @@
 
         const startTime = document.createElement("span");
         startTime.className = "record-time-start";
-        startTime.textContent = intervalStart || record.time;
-        if (isCrossDayInterval) startTime.title = "前一天最后记录时间";
+        startTime.textContent = interval?.startTime || record.time;
+        if (interval?.isCrossDay) startTime.title = "前一天的开始时间";
 
-        if (hasInterval) {
+        if (interval) {
           const endTime = document.createElement("span");
           endTime.className = "record-time-end";
           endTime.textContent = record.time;
@@ -3699,6 +3815,17 @@
         item.append(bar, body, time);
 
           list.append(item);
+          if (interval?.gapMinutes > 0) {
+            const gap = document.createElement("li");
+            gap.className = "record-gap";
+            gap.setAttribute("aria-label", `空白时间 ${formatDuration(interval.gapMinutes)}`);
+            const spacer = document.createElement("span");
+            const gapDuration = document.createElement("span");
+            gapDuration.className = "record-gap-duration";
+            gapDuration.textContent = `空白 ${formatDuration(interval.gapMinutes)}`;
+            gap.append(spacer, gapDuration);
+            list.append(gap);
+          }
         });
       });
 
@@ -3707,25 +3834,19 @@
 
     function buildTimeRows(records, date) {
       const chronologicalRecords = [...records].reverse();
-      const previousDayBoundary = getPreviousDayBoundary(date);
       let totalMinutes = 0;
 
       const rows = chronologicalRecords.map((record, index) => {
-        const previousRecord = index === 0
-          ? previousDayBoundary?.record || null
-          : chronologicalRecords[index - 1];
-        if (!previousRecord) return null;
-
-        const duration = index === 0 && previousDayBoundary
-          ? durationFromPreviousDay(previousRecord.time, record.time)
-          : durationBetween(previousRecord.time, record.time);
-        totalMinutes += duration;
+        const descendingIndex = records.length - 1 - index;
+        const interval = getRecordInterval(records, descendingIndex, date);
+        if (!interval) return null;
+        totalMinutes += interval.duration;
 
         return {
-          index: index + (previousDayBoundary ? 1 : 0),
-          start: previousRecord.time,
+          index: index + 1,
+          start: interval.startTime,
           end: record.time,
-          duration,
+          duration: interval.duration,
           category: record.category,
           tags: record.tags,
           text: record.text,
@@ -3891,21 +4012,18 @@
 
     function buildCalendarEvents(records, date) {
       const chronologicalRecords = [...records].reverse();
-      const previousDayBoundary = getPreviousDayBoundary(date);
       const eventsByCategory = {};
       let eventCount = 0;
 
       chronologicalRecords.forEach((record, index) => {
-        const previousRecord = index === 0
-          ? previousDayBoundary?.record || null
-          : chronologicalRecords[index - 1];
-        if (!previousRecord) return;
+        const descendingIndex = records.length - 1 - index;
+        const interval = getRecordInterval(records, descendingIndex, date);
+        if (!interval) return;
         if (!record.category) return;
 
-        const startDate = index === 0 && previousDayBoundary ? previousDayBoundary.date : date;
         const event = [
           "BEGIN:VEVENT",
-          `DTSTART;TZID=Asia/Shanghai:${formatIcsDate(startDate, previousRecord.time)}`,
+          `DTSTART;TZID=Asia/Shanghai:${formatIcsDate(interval.startDate, interval.startTime)}`,
           `DTEND;TZID=Asia/Shanghai:${formatIcsDate(date, record.time)}`,
           `SUMMARY:${escapeIcsText(summaryForRecord(record))}`,
           record.note ? `DESCRIPTION:${escapeIcsText(record.note)}` : null,
@@ -4220,14 +4338,88 @@
       };
     }
 
+    function activeEntryTiming() {
+      if (!backfillPanel.classList.contains("is-hidden")) {
+        return {
+          date: dateFromSelectors(backfillYear, backfillMonth, backfillDay),
+          endTime: isValidTimeInput(backfillTime.value.trim()) ? backfillTime.value.trim() : formatTime(new Date())
+        };
+      }
+
+      return { date: today, endTime: formatTime(new Date()) };
+    }
+
+    function refreshEntryStartTime(force = false) {
+      if (entryStartTimeTouched && !force) return;
+      const timing = activeEntryTiming();
+      entryStartTime.value = getDefaultStartTime(timing.date, timing.endTime);
+    }
+
+    function resolveEntryStartTime(date, endTime) {
+      if (entryStartTimeTouched && isValidTimeInput(entryStartTime.value)) {
+        return entryStartTime.value;
+      }
+      return getDefaultStartTime(date, endTime);
+    }
+
+    function validateEntryInterval(date, startTime, endTime) {
+      if (!isValidTimeInput(startTime) || !isValidTimeInput(endTime)) {
+        alert("请选择正确的开始时间");
+        return false;
+      }
+
+      const startMinutes = timeToMinutes(startTime);
+      const endMinutes = timeToMinutes(endTime);
+      const previousRecord = loadRecords(date)
+        .filter((record) => timeToMinutes(record.time) < endMinutes)
+        .sort((first, second) => timeToMinutes(second.time) - timeToMinutes(first.time))[0];
+
+      if (previousRecord) {
+        const previousEndMinutes = timeToMinutes(previousRecord.time);
+        if (startMinutes < previousEndMinutes || startMinutes > endMinutes) {
+          alert(`开始时间应在 ${previousRecord.time}–${endTime} 之间`);
+          return false;
+        }
+      } else if (startMinutes > endMinutes) {
+        const previousDayBoundary = getPreviousDayBoundary(date);
+        if (previousDayBoundary && startMinutes < timeToMinutes(previousDayBoundary.record.time)) {
+          alert(`开始时间不能早于前一天最后记录 ${previousDayBoundary.record.time}`);
+          return false;
+        }
+      }
+
+      return true;
+    }
+
+    function resetEntryStartTime() {
+      entryStartTimeTouched = false;
+      refreshEntryStartTime(true);
+    }
+
+    function updateBottomSheetViewport() {
+      if (!window.visualViewport || bottomSheet.classList.contains("is-hidden")) return;
+      const viewport = window.visualViewport;
+      const layoutHeight = Math.max(window.innerHeight, document.documentElement.clientHeight);
+      const keyboardOffset = Math.max(0, layoutHeight - viewport.height - viewport.offsetTop);
+      bottomSheet.style.bottom = `${keyboardOffset}px`;
+      bottomSheet.style.maxHeight = `${Math.max(260, viewport.height - 12)}px`;
+    }
+
+    function resetBottomSheetViewport() {
+      bottomSheet.style.bottom = "";
+      bottomSheet.style.maxHeight = "";
+    }
+
     function openBottomSheet() {
       clearTimeout(bottomSheetCloseTimer);
       bottomSheet.classList.remove("is-hidden");
       sheetOverlay.classList.remove("is-hidden");
       fab.classList.add("is-hidden");
       renderEntryClassification();
+      refreshEntryStartTime();
       requestAnimationFrame(() => {
         bottomSheet.classList.add("is-open");
+        updateBottomSheetViewport();
       });
       setTimeout(() => {
         if (bottomSheet.classList.contains("is-open")) entryInput.focus();
@@ -4245,6 +4437,7 @@
         bottomSheet.classList.add("is-hidden");
         sheetOverlay.classList.add("is-hidden");
         toggleBackfillPanel(false);
+        resetBottomSheetViewport();
         fab.classList.toggle("is-hidden", settingsMode !== "main" || !isToday(viewedDate));
       }, 300);
     }
@@ -4253,9 +4446,14 @@
       backfillPanel.classList.toggle("is-hidden", !open);
       if (open) {
         setDateSelectors(backfillYear, backfillMonth, backfillDay, today);
+        entryStartTimeTouched = false;
+        refreshEntryStartTime(true);
         backfillError.classList.add("is-hidden");
         backfillTime.classList.remove("is-invalid");
         setTimeout(() => backfillTime.focus(), 0);
+      } else if (!bottomSheet.classList.contains("is-hidden")) {
+        entryStartTimeTouched = false;
+        refreshEntryStartTime(true);
       }
     }
 
@@ -4277,7 +4475,7 @@
 
     function submitBackfillPanel() {
       const time = backfillTime.value.trim();
-      const rawText = backfillText.value.trim();
+      const rawText = entryInput.value.trim();
       const targetDate = dateFromSelectors(backfillYear, backfillMonth, backfillDay);
 
       if (!validateBackfillPanel()) {
@@ -4287,13 +4485,16 @@
 
       if (!rawText) {
         setBackfillError("请填写事件描述");
-        backfillText.focus();
+        entryInput.focus();
         return;
       }
 
       const parsedEntry = parseEntryText(rawText);
       const classification = entryClassificationFields();
+      const startTime = resolveEntryStartTime(targetDate, time);
+      if (!validateEntryInterval(targetDate, startTime, time)) return;
       const newRecord = {
+        startTime,
         time,
         text: parsedEntry.text,
         category: classification.category,
@@ -4305,8 +4506,10 @@
 
       insertNewRecords(targetDate, [newRecord]);
       backfillTime.value = "";
-      backfillText.value = "";
+      entryInput.value = "";
+      updateSplitHint();
       resetEntryClassification();
+      resetEntryStartTime();
       toggleBackfillPanel(false);
       if (formatDateKey(targetDate) === formatDateKey(viewedDate)) {
         render();
@@ -4321,6 +4524,11 @@
 
     entryForm.addEventListener("submit", (event) => {
       event.preventDefault();
+
+      if (!backfillPanel.classList.contains("is-hidden")) {
+        submitBackfillPanel();
+        return;
+      }
 
       const rawText = entryInput.value.trim();
       if (!rawText) {
@@ -4339,12 +4547,16 @@
 
       const newRecords = [];
       const classification = entryClassificationFields();
+      const firstEndTime = split.isSplit ? split.secondaryEndTime : backfill.time;
+      const startTime = resolveEntryStartTime(today, firstEndTime);
+      if (!validateEntryInterval(today, startTime, firstEndTime)) return;
 
       if (split.isSplit) {
         const mainEntry = parseEntryText(split.mainText);
         const secondaryEntry = parseEntryText(split.secondaryText);
         newRecords.push(
           {
+            startTime,
             time: split.secondaryEndTime,
             text: mainEntry.text,
             category: classification.category,
@@ -4354,6 +4566,7 @@
             isSplit: true
           },
           {
+            startTime: split.secondaryEndTime,
             time: backfill.time,
             text: secondaryEntry.text,
             category: classification.category,
@@ -4366,6 +4579,7 @@
       } else {
         const parsedEntry = parseEntryText(backfill.text);
         newRecords.push({
+          startTime,
           time: backfill.time,
           text: parsedEntry.text,
           category: classification.category,
@@ -4382,6 +4596,7 @@
       entryInput.value = "";
       updateSplitHint();
       resetEntryClassification();
+      resetEntryStartTime();
       render();
       closeBottomSheet();
     });
@@ -4450,7 +4665,21 @@
 
     ctxOverlay.addEventListener("click", closeCtxMenu);
 
-    entryInput.addEventListener("input", updateSplitHint);
+    entryInput.addEventListener("input", () => {
+      updateSplitHint();
+      if (entryInput.value.trim() && backfillError.textContent === "请填写事件描述") {
+        backfillError.classList.add("is-hidden");
+      }
+    });
+
+    entryStartTime.addEventListener("input", () => {
+      entryStartTimeTouched = true;
+    });
+
+    entryStartAuto.addEventListener("click", () => {
+      entryStartTimeTouched = false;
+      refreshEntryStartTime(true);
+    });
 
     insertPlusBtn.addEventListener("click", () => {
       const start = entryInput.selectionStart ?? entryInput.value.length;
@@ -4479,28 +4708,23 @@
 
     backfillTime.addEventListener("input", () => {
       if (!backfillError.classList.contains("is-hidden")) validateBackfillPanel();
+      refreshEntryStartTime();
     });
 
-    backfillText.addEventListener("input", () => {
-      if (backfillText.value.trim() && backfillError.textContent === "请填写事件描述") {
-        backfillError.classList.add("is-hidden");
-      }
+    backfillYear.addEventListener("change", () => {
+      refreshDaySelector(backfillYear, backfillMonth, backfillDay);
+      refreshEntryStartTime();
     });
-
-    backfillYear.addEventListener("change", () => refreshDaySelector(backfillYear, backfillMonth, backfillDay));
-    backfillMonth.addEventListener("change", () => refreshDaySelector(backfillYear, backfillMonth, backfillDay));
-
-    backfillText.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") {
-        event.preventDefault();
-        submitBackfillPanel();
-      }
+    backfillMonth.addEventListener("change", () => {
+      refreshDaySelector(backfillYear, backfillMonth, backfillDay);
+      refreshEntryStartTime();
     });
+    backfillDay.addEventListener("change", () => refreshEntryStartTime());
 
     backfillTime.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
         event.preventDefault();
-        backfillText.focus();
+        submitBackfillPanel();
       }
     });
 
@@ -4508,8 +4732,21 @@
 
     cancelBackfill.addEventListener("click", () => {
       backfillTime.value = "";
-      backfillText.value = "";
       toggleBackfillPanel(false);
+    });
+
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", updateBottomSheetViewport);
+      window.visualViewport.addEventListener("scroll", updateBottomSheetViewport);
+    }
+
+    bottomSheet.addEventListener("focusin", (event) => {
+      setTimeout(() => {
+        updateBottomSheetViewport();
+        if (event.target instanceof HTMLElement) {
+          event.target.scrollIntoView({ block: "nearest" });
+        }
+      }, 250);
     });
 
     settingsButton.addEventListener("click", showSettingsPage);
