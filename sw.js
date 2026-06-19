@@ -1,4 +1,4 @@
-const CACHE_NAME = "dotlog-v0.6.9-borderless-logo";
+const CACHE_NAME = "dotlog-v0.7.0-mobile-ux";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (event) => {

@@ -539,13 +539,76 @@
     }
 
     .record {
+      position: relative;
+      overflow: hidden;
       display: grid;
-      grid-template-columns: 76px 5.5em 1fr auto auto auto;
+      grid-template-columns: 76px 5.5em minmax(0, 1fr) auto;
       gap: 12px;
       align-items: start;
       min-height: 38px;
       padding: 7px 0;
       border-bottom: 1px solid rgba(224, 221, 216, 0.62);
+      transition: padding-right 0.22s ease;
+    }
+
+    .record-content {
+      display: contents;
+    }
+
+    .record-actions {
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 1;
+      display: flex;
+      align-items: stretch;
+      transform: translateX(100%);
+      transition: transform 0.22s ease;
+    }
+
+    .record-action-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 56px;
+      border: 0;
+      padding: 0;
+      cursor: pointer;
+    }
+
+    .record-action-btn svg {
+      width: 18px;
+      height: 18px;
+      fill: none;
+      stroke: #FFFFFF;
+      stroke-width: 1.8;
+    }
+
+    .record-action-edit {
+      background: var(--accent);
+    }
+
+    .record-action-delete {
+      background: #C87B7B;
+    }
+
+    .record.is-swiped .record-actions {
+      transform: translateX(0);
+    }
+
+    .record.is-swiped {
+      padding-right: 112px;
+    }
+
+    @media (hover: hover) {
+      .record:hover .record-actions {
+        transform: translateX(0);
+      }
+
+      .record:hover {
+        padding-right: 112px;
+      }
     }
 
     .record-time {
@@ -630,6 +693,45 @@
 
     .tag-picker {
       align-items: center;
+    }
+
+    .tag-picker-actions {
+      flex-basis: 100%;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 6px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+    }
+
+    .tag-picker-actions .finish-tags {
+      border: 0;
+      border-radius: 6px;
+      background: var(--accent);
+      color: #FFFFFF;
+      padding: 8px 20px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    .tag-picker-actions .finish-tags:hover {
+      filter: brightness(0.96);
+      text-decoration: none;
+    }
+
+    .tag-picker-actions .skip-category {
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      padding: 8px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    .tag-picker-actions .skip-category:hover {
+      color: var(--text);
+      text-decoration: underline;
     }
 
     .tag-prompt {
@@ -1016,29 +1118,6 @@
       gap: 10px;
     }
 
-    .edit-button,
-    .delete-button {
-      opacity: 0;
-      border: 0;
-      background: transparent;
-      color: var(--muted);
-      padding: 2px 0 2px 12px;
-      cursor: pointer;
-      line-height: 1.7;
-    }
-
-    .record:hover .edit-button,
-    .record:hover .delete-button,
-    .edit-button:focus-visible,
-    .delete-button:focus-visible {
-      opacity: 1;
-    }
-
-    .edit-button:hover,
-    .delete-button:hover {
-      color: var(--text);
-    }
-
     .empty {
       display: grid;
       place-items: center;
@@ -1074,7 +1153,7 @@
       }
 
       .record {
-        grid-template-columns: 68px 5.2em 1fr auto auto auto;
+        grid-template-columns: 68px 5.2em minmax(0, 1fr) auto;
         gap: 9px;
       }
 
@@ -1087,12 +1166,6 @@
       .tag-picker,
       .edit-panel {
         grid-column: 1 / -1;
-      }
-
-      .edit-button,
-      .delete-button {
-        opacity: 1;
-        padding-left: 8px;
       }
 
       .form-line {
@@ -1122,7 +1195,7 @@
       }
 
       .record {
-        grid-template-columns: max-content max-content 1fr max-content max-content;
+        grid-template-columns: max-content max-content minmax(0, 1fr);
         column-gap: 8px;
         row-gap: 4px;
         padding: 10px 0;
@@ -1138,26 +1211,6 @@
         grid-row: 1;
         line-height: 2;
         text-align: left;
-      }
-
-      .edit-button {
-        grid-column: 4;
-        grid-row: 1;
-      }
-
-      .delete-button {
-        grid-column: 5;
-        grid-row: 1;
-      }
-
-      .edit-button,
-      .delete-button {
-        align-self: start;
-        opacity: 1;
-        padding: 2px 0;
-        color: var(--muted);
-        font-size: 13px;
-        white-space: nowrap;
       }
 
       .record-text {
@@ -2142,6 +2195,12 @@
       return openTagIndexes.includes(index);
     }
 
+    function closeAllSwipedRecords() {
+      document.querySelectorAll(".record.is-swiped").forEach((element) => {
+        element.classList.remove("is-swiped");
+      });
+    }
+
     function createCategoryBadge(categoryName, options = {}) {
       const badge = document.createElement(options.button ? "button" : "span");
       badge.className = "category-pill";
@@ -2190,13 +2249,6 @@
         button.addEventListener("click", () => {
           if (!draft) {
             updateRecordCategory(viewedDate, index, category.name);
-            return;
-          }
-
-          if (draft.category === category.name) {
-            draft.category = null;
-            draft.tags = [];
-            commitClassificationDraft(index);
             return;
           }
 
@@ -2289,7 +2341,10 @@
         discardClassificationDraft(index);
       });
 
-      picker.append(finishButton, skipButton);
+      const actionsRow = document.createElement("div");
+      actionsRow.className = "tag-picker-actions";
+      actionsRow.append(finishButton, skipButton);
+      picker.append(actionsRow);
       return picker;
     }
 
@@ -2980,6 +3035,9 @@
         const item = document.createElement("li");
         item.className = "record";
 
+        const content = document.createElement("div");
+        content.className = "record-content";
+
         const time = document.createElement("span");
         time.className = "record-time";
         time.textContent = record.time;
@@ -3028,18 +3086,30 @@
           });
         }
 
+        const actions = document.createElement("div");
+        actions.className = "record-actions";
+
         const editButton = document.createElement("button");
-        editButton.className = "edit-button";
+        editButton.className = "record-action-btn record-action-edit";
         editButton.type = "button";
-        editButton.textContent = "编辑";
+        editButton.setAttribute("aria-label", "编辑");
+        editButton.innerHTML = `<svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M14.5 2.5l3 3L6 17H3v-3L14.5 2.5z"/>
+        </svg>`;
         editButton.addEventListener("click", () => {
           startEditingRecord(index, record);
+          closeAllSwipedRecords();
         });
 
         const deleteButton = document.createElement("button");
-        deleteButton.className = "delete-button";
+        deleteButton.className = "record-action-btn record-action-delete";
         deleteButton.type = "button";
-        deleteButton.textContent = "删除";
+        deleteButton.setAttribute("aria-label", "删除");
+        deleteButton.innerHTML = `<svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <polyline points="4,6 16,6"/>
+          <path d="M7 6V4h6v2"/>
+          <rect x="5" y="6" width="10" height="11" rx="1"/>
+        </svg>`;
         deleteButton.addEventListener("click", () => {
           if (!confirm("确认删除这条记录？")) return;
           const latestRecords = loadRecords(viewedDate);
@@ -3053,19 +3123,51 @@
           render();
         });
 
-        item.append(time, duration, text, labelStack, editButton, deleteButton);
+        actions.append(editButton, deleteButton);
+        content.append(time, duration, text, labelStack);
 
         if (isCategoryOpen(index)) {
-          item.append(createCategoryPicker(record, index));
+          content.append(createCategoryPicker(record, index));
         }
 
         if (record.category && isTagOpen(index)) {
-          item.append(createTagPicker(record, index));
+          content.append(createTagPicker(record, index));
         }
 
         if (editingRecordIndex === index && editDraft) {
-          item.append(createEditPanel(index));
+          content.append(createEditPanel(index));
         }
+
+        let touchStartX = 0;
+        let touchStartY = 0;
+        let didSwipe = false;
+        item.addEventListener("touchstart", (event) => {
+          touchStartX = event.touches[0].clientX;
+          touchStartY = event.touches[0].clientY;
+          didSwipe = false;
+        }, { passive: true });
+        item.addEventListener("touchend", (event) => {
+          const deltaX = event.changedTouches[0].clientX - touchStartX;
+          const deltaY = event.changedTouches[0].clientY - touchStartY;
+          if (Math.abs(deltaX) <= Math.abs(deltaY)) return;
+
+          if (deltaX < -40) {
+            closeAllSwipedRecords();
+            item.classList.add("is-swiped");
+            didSwipe = true;
+          } else if (deltaX > 40) {
+            item.classList.remove("is-swiped");
+            didSwipe = true;
+          }
+        }, { passive: true });
+        item.addEventListener("click", (event) => {
+          if (!didSwipe) return;
+          event.preventDefault();
+          event.stopPropagation();
+          didSwipe = false;
+        });
+
+        item.append(content, actions);
 
         list.append(item);
       });
@@ -3563,7 +3665,6 @@
         render();
         showExportStatus(`已补录至 ${formatShortDateLabel(targetDate)}`);
       }
-      entryInput.focus();
     }
 
     entryForm.addEventListener("submit", (event) => {
@@ -3571,19 +3672,16 @@
 
       const rawText = entryInput.value.trim();
       if (!rawText) {
-        entryInput.focus();
         return;
       }
 
       const backfill = parseBackfill(rawText);
       if (!backfill) {
-        entryInput.focus();
         return;
       }
 
       const split = parseSplit(backfill.text, backfill.time);
       if (!split) {
-        entryInput.focus();
         return;
       }
 
@@ -3630,7 +3728,6 @@
       entryInput.value = "";
       updateSplitHint();
       render();
-      entryInput.focus();
     });
 
     tableToggle.addEventListener("click", () => {
@@ -3710,7 +3807,6 @@
       backfillTime.value = "";
       backfillText.value = "";
       toggleBackfillPanel(false);
-      entryInput.focus();
     });
 
     settingsButton.addEventListener("click", showSettingsPage);
@@ -3736,6 +3832,7 @@
     document.addEventListener("click", () => {
       closeDatePicker();
       closeCalendarMenu();
+      closeAllSwipedRecords();
     });
 
     document.addEventListener("keydown", (event) => {
@@ -3757,7 +3854,6 @@
       editDraft = null;
       closeDatePicker();
       render();
-      entryInput.focus();
     });
 
     render();
