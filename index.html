@@ -42,7 +42,7 @@
     .page {
       width: min(100% - 32px, 680px);
       margin: 0 auto;
-      padding: 56px 0 72px;
+      padding: 56px 0 100px;
     }
 
     .title {
@@ -253,83 +253,6 @@
       text-decoration: underline;
     }
 
-    .entry-form {
-      display: block;
-      padding: 18px 0;
-      border-top: 1px solid var(--border);
-      border-bottom: 1px solid var(--border);
-    }
-
-    .entry-row {
-      display: flex;
-      align-items: stretch;
-      gap: 10px;
-      width: 100%;
-    }
-
-    .entry-form.is-hidden {
-      display: none;
-    }
-
-    .entry-input {
-      flex: 1;
-      width: 100%;
-      min-width: 0;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      background: var(--paper);
-      color: var(--text);
-      padding: 11px 12px;
-      outline: none;
-    }
-
-    .entry-input::placeholder {
-      color: var(--muted);
-    }
-
-    .entry-input:focus {
-      border-color: var(--accent);
-    }
-
-    .submit-button {
-      border: 0;
-      border-radius: 6px;
-      background: var(--accent);
-      color: #FFFFFF;
-      padding: 0 18px;
-      min-width: 72px;
-      cursor: pointer;
-    }
-
-    .submit-button:hover {
-      filter: brightness(0.96);
-    }
-
-    .backfill-button {
-      border: 1px solid var(--muted);
-      border-radius: 6px;
-      background: transparent;
-      color: var(--muted);
-      width: 44px;
-      min-width: 44px;
-      padding: 0;
-      font-size: 1.2em;
-      cursor: pointer;
-    }
-
-    .backfill-button:hover {
-      border-color: var(--text);
-      color: var(--text);
-      background: rgba(255, 255, 255, 0.42);
-    }
-
-    .split-hint {
-      margin-top: 8px;
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.5;
-    }
-
     .backfill-panel,
     .edit-panel {
       display: grid;
@@ -341,8 +264,158 @@
       box-shadow: 0 8px 22px rgba(26, 26, 26, 0.05);
     }
 
-    .backfill-panel {
-      margin-top: 10px;
+    .fab {
+      position: fixed;
+      right: 24px;
+      bottom: calc(32px + env(safe-area-inset-bottom));
+      z-index: 200;
+      display: grid;
+      width: 56px;
+      height: 56px;
+      place-items: center;
+      border: 0;
+      border-radius: 999px;
+      background: var(--accent);
+      box-shadow: 0 4px 16px rgba(26, 26, 26, 0.18);
+      cursor: pointer;
+      transition: transform 0.18s ease, background 0.18s ease;
+    }
+
+    .fab:active {
+      transform: scale(0.93);
+    }
+
+    .fab svg {
+      width: 20px;
+      height: 20px;
+    }
+
+    .fab.is-open {
+      z-index: 500;
+      background: #888888;
+      transform: rotate(45deg);
+    }
+
+    .fab.is-hidden {
+      display: none;
+    }
+
+    .sheet-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 300;
+      background: rgba(26, 26, 26, 0.32);
+      transition: opacity 0.25s ease;
+    }
+
+    .sheet-overlay.is-hidden {
+      display: none;
+    }
+
+    .bottom-sheet {
+      position: fixed;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      z-index: 400;
+      width: 100%;
+      max-width: 680px;
+      max-height: calc(100vh - 24px);
+      margin: 0 auto;
+      overflow-y: auto;
+      border-radius: 16px 16px 0 0;
+      background: var(--paper);
+      padding: 12px 20px calc(40px + env(safe-area-inset-bottom));
+      box-shadow: 0 -4px 24px rgba(26, 26, 26, 0.12);
+      transform: translateY(100%);
+      transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+    }
+
+    .bottom-sheet.is-open {
+      transform: translateY(0);
+    }
+
+    .bottom-sheet.is-hidden {
+      display: none;
+    }
+
+    .sheet-handle {
+      width: 36px;
+      height: 4px;
+      margin: 0 auto 16px;
+      border-radius: 999px;
+      background: var(--border);
+    }
+
+    .sheet-input {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--bg);
+      color: var(--text);
+      padding: 14px 16px;
+      font-size: 16px;
+      outline: none;
+    }
+
+    .sheet-input:focus {
+      border-color: var(--accent);
+    }
+
+    .sheet-input::placeholder {
+      color: var(--muted);
+    }
+
+    .sheet-actions {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 12px;
+    }
+
+    .sheet-submit {
+      border: 0;
+      border-radius: 8px;
+      background: var(--accent);
+      color: #FFFFFF;
+      padding: 10px 24px;
+      font-size: 15px;
+      cursor: pointer;
+    }
+
+    .sheet-submit:active {
+      filter: brightness(0.93);
+    }
+
+    .sheet-secondary {
+      margin-top: 16px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
+    }
+
+    .sheet-backfill-toggle {
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      padding: 0;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    .sheet-backfill-toggle:active {
+      color: var(--text);
+    }
+
+    .bottom-sheet .backfill-panel {
+      margin-top: 12px;
+      border: 1px solid var(--border);
+      box-shadow: none;
+    }
+
+    .bottom-sheet .split-hint {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
     }
 
     .date-fields {
@@ -1185,15 +1258,6 @@
     }
 
     @media (max-width: 480px) {
-      .entry-row {
-        gap: 6px;
-      }
-
-      .submit-button {
-        min-width: 54px;
-        padding: 0 10px;
-      }
-
       .record {
         grid-template-columns: max-content max-content minmax(0, 1fr);
         column-gap: 8px;
@@ -1308,13 +1372,49 @@
       </div>
     </header>
 
-    <form class="entry-form" id="entryForm">
-      <div class="entry-row">
-        <input class="entry-input" id="entryInput" type="text" placeholder="发生了什么？" autocomplete="off">
-        <button class="submit-button" type="submit">记录</button>
-        <button class="backfill-button" id="backfillToggle" type="button" title="补录" aria-label="打开补录面板">+</button>
+    <section class="table-tools" id="tableTools">
+      <span class="export-status" id="exportStatus" aria-live="polite"></span>
+      <div id="tableArea"></div>
+    </section>
+
+    <section id="recordsArea" aria-live="polite"></section>
+    <section class="settings-view is-hidden" id="settingsView"></section>
+
+    <div class="calendar-import-overlay is-hidden" id="calendarImportOverlay" role="dialog" aria-modal="true" aria-labelledby="calendarImportTitle">
+      <section class="calendar-import-panel" id="calendarImportPanel"></section>
+    </div>
+
+    <button class="fab" id="fab" type="button" aria-label="新增记录">
+      <svg viewBox="0 0 20 20" fill="none" stroke="#FFFFFF" stroke-width="2" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <line x1="10" y1="4" x2="10" y2="16"/>
+        <line x1="4" y1="10" x2="16" y2="10"/>
+      </svg>
+    </button>
+
+    <div class="sheet-overlay is-hidden" id="sheetOverlay"></div>
+
+    <div class="bottom-sheet is-hidden" id="bottomSheet" role="dialog" aria-modal="true" aria-label="新增记录">
+      <div class="sheet-handle"></div>
+
+      <form class="sheet-form" id="entryForm">
+        <input
+          class="sheet-input"
+          id="entryInput"
+          type="text"
+          placeholder="发生了什么？"
+          autocomplete="off"
+          enterkeyhint="done"
+        >
+        <div class="split-hint is-hidden" id="splitHint">检测到加号 · 拆分格式：主事件 + 次事件 时长（分钟）</div>
+        <div class="sheet-actions">
+          <button class="sheet-submit" type="submit">记录</button>
+        </div>
+      </form>
+
+      <div class="sheet-secondary">
+        <button class="sheet-backfill-toggle" id="backfillToggle" type="button">+ 补录过去的时间</button>
       </div>
-      <div class="split-hint is-hidden" id="splitHint">检测到加号 · 拆分格式：主事件 + 次事件 时长（分钟） 例：看书 + 跑步 30</div>
+
       <div class="backfill-panel is-hidden" id="backfillPanel">
         <label class="form-line">
           <span>补录日期：</span>
@@ -1341,18 +1441,6 @@
           <button class="panel-cancel" id="cancelBackfill" type="button">取消</button>
         </div>
       </div>
-    </form>
-
-    <section class="table-tools" id="tableTools">
-      <span class="export-status" id="exportStatus" aria-live="polite"></span>
-      <div id="tableArea"></div>
-    </section>
-
-    <section id="recordsArea" aria-live="polite"></section>
-    <section class="settings-view is-hidden" id="settingsView"></section>
-
-    <div class="calendar-import-overlay is-hidden" id="calendarImportOverlay" role="dialog" aria-modal="true" aria-labelledby="calendarImportTitle">
-      <section class="calendar-import-panel" id="calendarImportPanel"></section>
     </div>
   </main>
 
@@ -1371,6 +1459,9 @@
     const confirmBackfill = document.querySelector("#confirmBackfill");
     const cancelBackfill = document.querySelector("#cancelBackfill");
     const splitHint = document.querySelector("#splitHint");
+    const fab = document.querySelector("#fab");
+    const bottomSheet = document.querySelector("#bottomSheet");
+    const sheetOverlay = document.querySelector("#sheetOverlay");
     const tableTools = document.querySelector("#tableTools");
     const tableToggle = document.querySelector("#tableToggle");
     const exportIcs = document.querySelector("#exportIcs");
@@ -1406,6 +1497,7 @@
     let openTagIndexes = [];
     let classificationDrafts = {};
     let exportStatusTimer = null;
+    let bottomSheetCloseTimer = null;
     let settingsMode = "main";
     let editingRecordIndex = null;
     let editDraft = null;
@@ -2542,8 +2634,9 @@
       closeDatePicker();
       closeCalendarMenu();
       closeCalendarImportPanel();
+      closeBottomSheet();
       pageHeader.classList.add("is-hidden");
-      entryForm.classList.add("is-hidden");
+      fab.classList.add("is-hidden");
       tableTools.classList.add("is-hidden");
       recordsArea.classList.add("is-hidden");
       settingsView.classList.remove("is-hidden");
@@ -3001,7 +3094,7 @@
 
       dateText.textContent = `${formatDateLabel(viewedDate)} ▾`;
       todayLink.hidden = viewingToday;
-      entryForm.classList.toggle("is-hidden", !viewingToday);
+      fab.classList.toggle("is-hidden", !viewingToday);
       const currentSummaryText = summaryTextForRecords(records);
       summaryText.textContent = currentSummaryText;
       daySummary.classList.toggle("is-hidden", !currentSummaryText);
@@ -3603,6 +3696,34 @@
       splitHint.classList.toggle("is-hidden", !(entryInput.value.trim() && entryInput.value.includes("+")));
     }
 
+    function openBottomSheet() {
+      clearTimeout(bottomSheetCloseTimer);
+      bottomSheet.classList.remove("is-hidden");
+      sheetOverlay.classList.remove("is-hidden");
+      requestAnimationFrame(() => {
+        bottomSheet.classList.add("is-open");
+        fab.classList.add("is-open");
+      });
+      setTimeout(() => {
+        if (bottomSheet.classList.contains("is-open")) entryInput.focus();
+      }, 300);
+    }
+
+    function closeBottomSheet() {
+      clearTimeout(bottomSheetCloseTimer);
+      bottomSheet.classList.remove("is-open");
+      fab.classList.remove("is-open");
+      if (bottomSheet.classList.contains("is-hidden")) {
+        toggleBackfillPanel(false);
+        return;
+      }
+      bottomSheetCloseTimer = setTimeout(() => {
+        bottomSheet.classList.add("is-hidden");
+        sheetOverlay.classList.add("is-hidden");
+        toggleBackfillPanel(false);
+      }, 300);
+    }
+
     function toggleBackfillPanel(open) {
       backfillPanel.classList.toggle("is-hidden", !open);
       if (open) {
@@ -3668,6 +3789,7 @@
         render();
         showExportStatus(`已补录至 ${formatShortDateLabel(targetDate)}`);
       }
+      closeBottomSheet();
     }
 
     entryForm.addEventListener("submit", (event) => {
@@ -3731,6 +3853,7 @@
       entryInput.value = "";
       updateSplitHint();
       render();
+      closeBottomSheet();
     });
 
     tableToggle.addEventListener("click", () => {
@@ -3772,6 +3895,16 @@
     });
 
     entryInput.addEventListener("input", updateSplitHint);
+
+    fab.addEventListener("click", () => {
+      if (bottomSheet.classList.contains("is-open")) {
+        closeBottomSheet();
+      } else {
+        openBottomSheet();
+      }
+    });
+
+    sheetOverlay.addEventListener("click", closeBottomSheet);
 
     backfillToggle.addEventListener("click", () => {
       toggleBackfillPanel(backfillPanel.classList.contains("is-hidden"));
@@ -3840,6 +3973,7 @@
 
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {
+        closeBottomSheet();
         closeCalendarMenu();
         closeCalendarImportPanel();
       }
