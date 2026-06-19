@@ -245,18 +245,19 @@
 
     .week-day.is-today .week-day-num {
       color: var(--accent);
-      font-weight: 600;
+      font-weight: 700;
     }
 
-    .week-day.is-selected .week-day-num {
-      background: var(--text);
-      color: var(--paper);
+    .week-day.is-selected:not(.is-today) .week-day-num {
+      background: #E0E0E0;
+      color: var(--text);
       font-weight: 600;
     }
 
     .week-day.is-today.is-selected .week-day-num {
       background: var(--accent);
       color: #FFFFFF;
+      font-weight: 700;
     }
 
     .week-day-dot {
@@ -270,12 +271,12 @@
       background: var(--accent);
     }
 
-    .week-day.is-selected .week-day-dot {
-      background: var(--paper);
-    }
-
     .week-day.is-today.is-selected .week-day-dot {
       background: rgba(255, 255, 255, 0.7);
+    }
+
+    .week-day.is-selected:not(.is-today) .week-day-dot {
+      background: var(--muted);
     }
 
     .sync-indicator {
@@ -430,28 +431,31 @@
       margin-top: 12px;
     }
 
-    .sheet-plus-btn {
+    .sheet-left-actions {
       display: flex;
       align-items: center;
-      gap: 4px;
+      gap: 8px;
+    }
+
+    .sheet-aux-btn {
+      display: flex;
+      width: 36px;
+      height: 36px;
+      align-items: center;
+      justify-content: center;
       border: 1px solid var(--border);
       border-radius: 8px;
       background: transparent;
       color: var(--muted);
-      padding: 8px 14px;
-      font-size: 14px;
+      font-size: 16px;
+      font-weight: 500;
       cursor: pointer;
       -webkit-tap-highlight-color: transparent;
     }
 
-    .sheet-plus-btn svg {
-      width: 14px;
-      height: 14px;
-      stroke: var(--muted);
-    }
-
-    .sheet-plus-btn:active {
+    .sheet-aux-btn:active {
       background: var(--bg);
+      color: var(--text);
     }
 
     .sheet-submit {
@@ -466,25 +470,6 @@
 
     .sheet-submit:active {
       filter: brightness(0.93);
-    }
-
-    .sheet-secondary {
-      margin-top: 16px;
-      padding-top: 14px;
-      border-top: 1px solid var(--border);
-    }
-
-    .sheet-backfill-toggle {
-      border: 0;
-      background: transparent;
-      color: var(--muted);
-      padding: 0;
-      font-size: 14px;
-      cursor: pointer;
-    }
-
-    .sheet-backfill-toggle:active {
-      color: var(--text);
     }
 
     .bottom-sheet .backfill-panel {
@@ -801,9 +786,9 @@
       position: fixed;
       inset: 0;
       z-index: 500;
-      background: rgba(0, 0, 0, 0.12);
-      -webkit-backdrop-filter: blur(2px);
-      backdrop-filter: blur(2px);
+      background: rgba(0, 0, 0, 0.06);
+      -webkit-backdrop-filter: blur(1px);
+      backdrop-filter: blur(1px);
       transition: opacity 0.2s ease;
     }
 
@@ -1612,20 +1597,13 @@
         >
         <div class="split-hint is-hidden" id="splitHint">检测到加号 · 拆分格式：主事件 + 次事件 时长（分钟）</div>
         <div class="sheet-actions">
-          <button class="sheet-plus-btn" id="insertPlus" type="button" aria-label="插入加号">
-            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-              <line x1="10" y1="4" x2="10" y2="16"/>
-              <line x1="4" y1="10" x2="16" y2="10"/>
-            </svg>
-            <span>插入 +</span>
-          </button>
+          <div class="sheet-left-actions">
+            <button class="sheet-aux-btn" id="insertPlus" type="button" aria-label="插入加号">+</button>
+            <button class="sheet-aux-btn" id="backfillToggle" type="button" aria-label="补录">补</button>
+          </div>
           <button class="sheet-submit" type="submit">记录</button>
         </div>
       </form>
-
-      <div class="sheet-secondary">
-        <button class="sheet-backfill-toggle" id="backfillToggle" type="button">+ 补录过去的时间</button>
-      </div>
 
       <div class="backfill-panel is-hidden" id="backfillPanel">
         <label class="form-line">
