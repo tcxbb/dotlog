@@ -372,6 +372,7 @@
       width: 100%;
       max-width: 680px;
       max-height: calc(100vh - 24px);
+      overflow-y: auto;
       margin: 0 auto;
       overflow-y: auto;
       border-radius: 16px 16px 0 0;
@@ -476,6 +477,34 @@
       color: var(--muted);
       font-size: 13px;
       line-height: 1.5;
+    }
+
+    .entry-classification {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+    }
+
+    .entry-classification-row {
+      display: grid;
+      grid-template-columns: 36px minmax(0, 1fr);
+      gap: 8px;
+      align-items: start;
+    }
+
+    .entry-classification-label {
+      color: var(--muted);
+      padding-top: 4px;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .entry-classification-options {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
     }
 
     .date-fields {
@@ -1589,6 +1618,7 @@
           enterkeyhint="done"
         >
         <div class="split-hint is-hidden" id="splitHint">检测到加号 · 拆分格式：主事件 + 次事件 时长（分钟）</div>
+        <div class="entry-classification" id="entryClassification"></div>
         <div class="sheet-actions">
           <div class="sheet-left-actions">
             <button class="sheet-aux-btn" id="insertPlus" type="button" aria-label="插入加号">+</button>
@@ -1631,6 +1661,7 @@
   <script>
     const entryForm = document.querySelector("#entryForm");
     const entryInput = document.querySelector("#entryInput");
+    const entryClassification = document.querySelector("#entryClassification");
     const insertPlusBtn = document.querySelector("#insertPlus");
     const backfillToggle = document.querySelector("#backfillToggle");
     const backfillPanel = document.querySelector("#backfillPanel");
@@ -1681,6 +1712,7 @@
     let openCategoryIndexes = [];
     let openTagIndexes = [];
     let classificationDrafts = {};
+    let entryClassificationDraft = { category: null, tags: [] };
     let exportStatusTimer = null;
     let bottomSheetCloseTimer = null;
     let ctxTargetIndex = null;
@@ -4044,9 +4076,7 @@
     function insertNewRecords(date, newRecords) {
       const records = sortRecords([...newRecords, ...loadRecords(date)]);
       saveRecords(date, records);
-      openCategoryIndexes = newRecords
-        .map((record) => records.indexOf(record))
-        .filter((index) => index >= 0);
+      openCategoryIndexes = [];
       openTagIndexes = [];
       classificationDrafts = {};
       editingRecordIndex = null;
@@ -4059,11 +4089,106 @@
       splitHint.classList.toggle("is-hidden", !(entryInput.value.trim() && entryInput.value.includes("+")));
     }
 
+    function renderEntryClassification() {
+      const categoryRow = document.createElement("div");
+      categoryRow.className = "entry-classification-row";
+
+      const categoryLabel = document.createElement("span");
+      categoryLabel.className = "entry-classification-label";
+      categoryLabel.textContent = "分类";
+
+      const categoryOptions = document.createElement("div");
+      categoryOptions.className = "entry-classification-options";
+
+      getCategories().forEach((category) => {
+        const button = document.createElement("button");
+        button.className = "category-option";
+        button.type = "button";
+        button.textContent = category.name;
+        button.setAttribute("aria-pressed", String(entryClassificationDraft.category === category.name));
+
+        if (entryClassificationDraft.category === category.name) {
+          button.classList.add("is-selected");
+          button.style.backgroundColor = category.color;
+          button.style.borderColor = category.color;
+        }
+
+        button.addEventListener("click", () => {
+          const selectingCurrent = entryClassificationDraft.category === category.name;
+          entryClassificationDraft = {
+            category: selectingCurrent ? null : category.name,
+            tags: []
+          };
+          renderEntryClassification();
+        });
+        categoryOptions.append(button);
+      });
+
+      categoryRow.append(categoryLabel, categoryOptions);
+      const rows = [categoryRow];
+      const availableTags = entryClassificationDraft.category
+        ? getCategoryTags(entryClassificationDraft.category)
+        : [];
+
+      if (availableTags.length > 0) {
+        const tagRow = document.createElement("div");
+        tagRow.className = "entry-classification-row";
+
+        const tagLabel = document.createElement("span");
+        tagLabel.className = "entry-classification-label";
+        tagLabel.textContent = "标签";
+
+        const tagOptions = document.createElement("div");
+        tagOptions.className = "entry-classification-options";
+
+        availableTags.forEach((tag) => {
+          const button = document.createElement("button");
+          button.className = "tag-option";
+          button.type = "button";
+          button.textContent = tag;
+          button.setAttribute("aria-pressed", String(entryClassificationDraft.tags.includes(tag)));
+
+          if (entryClassificationDraft.tags.includes(tag)) {
+            const color = categoryColor(entryClassificationDraft.category);
+            button.classList.add("is-selected");
+            button.style.backgroundColor = color;
+            button.style.borderColor = color;
+          }
+
+          button.addEventListener("click", () => {
+            entryClassificationDraft.tags = entryClassificationDraft.tags.includes(tag)
+              ? entryClassificationDraft.tags.filter((item) => item !== tag)
+              : [...entryClassificationDraft.tags, tag];
+            renderEntryClassification();
+          });
+          tagOptions.append(button);
+        });
+
+        tagRow.append(tagLabel, tagOptions);
+        rows.push(tagRow);
+      }
+
+      entryClassification.replaceChildren(...rows);
+    }
+
+    function resetEntryClassification() {
+      entryClassificationDraft = { category: null, tags: [] };
+      renderEntryClassification();
+    }
+
+    function entryClassificationFields() {
+      return {
+        category: entryClassificationDraft.category,
+        tags: entryClassificationDraft.category ? [...entryClassificationDraft.tags] : []
+      };
+    }
+
     function openBottomSheet() {
       clearTimeout(bottomSheetCloseTimer);
       bottomSheet.classList.remove("is-hidden");
       sheetOverlay.classList.remove("is-hidden");
       fab.classList.add("is-hidden");
+      renderEntryClassification();
       requestAnimationFrame(() => {
         bottomSheet.classList.add("is-open");
       });
@@ -4130,12 +4255,13 @@
       }
 
       const parsedEntry = parseEntryText(rawText);
+      const classification = entryClassificationFields();
       const newRecord = {
         time,
         text: parsedEntry.text,
-        category: null,
+        category: classification.category,
         note: parsedEntry.note,
-        tags: [],
+        tags: classification.tags,
         isBackfill: true,
         isSplit: false
       };
@@ -4143,6 +4269,7 @@
       insertNewRecords(targetDate, [newRecord]);
       backfillTime.value = "";
       backfillText.value = "";
+      resetEntryClassification();
       toggleBackfillPanel(false);
       if (formatDateKey(targetDate) === formatDateKey(viewedDate)) {
         render();
@@ -4174,6 +4301,7 @@
       }
 
       const newRecords = [];
+      const classification = entryClassificationFields();
 
       if (split.isSplit) {
         const mainEntry = parseEntryText(split.mainText);
@@ -4182,18 +4310,18 @@
           {
             time: split.secondaryEndTime,
             text: mainEntry.text,
-            category: null,
+            category: classification.category,
             note: mainEntry.note,
-            tags: [],
+            tags: [...classification.tags],
             isBackfill: backfill.isBackfill,
             isSplit: true
           },
           {
             time: backfill.time,
             text: secondaryEntry.text,
-            category: null,
+            category: classification.category,
             note: secondaryEntry.note,
-            tags: [],
+            tags: [...classification.tags],
             isBackfill: backfill.isBackfill,
             isSplit: true
           }
@@ -4203,9 +4331,9 @@
         newRecords.push({
           time: backfill.time,
           text: parsedEntry.text,
-          category: null,
+          category: classification.category,
           note: parsedEntry.note,
-          tags: [],
+          tags: classification.tags,
           isBackfill: backfill.isBackfill,
           isSplit: false
         });
@@ -4216,13 +4344,8 @@
       currentWeekStart = getWeekStart(viewedDate);
       entryInput.value = "";
       updateSplitHint();
+      resetEntryClassification();
       render();
-      requestAnimationFrame(() => {
-        const firstPicker = document.querySelector(".category-picker");
-        if (firstPicker) {
-          firstPicker.scrollIntoView({ behavior: "smooth", block: "center" });
-        }
-      });
       closeBottomSheet();
     });
 
