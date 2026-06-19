@@ -15,7 +15,7 @@
       --bg: #F7F5F0;
       --text: #1A1A1A;
       --muted: #8A8A8A;
-      --accent: #4A7C6F;
+      --accent: #606060;
       --border: #E0DDD8;
       --paper: #FFFEFB;
     }
@@ -759,7 +759,10 @@
       position: fixed;
       inset: 0;
       z-index: 500;
-      background: transparent;
+      background: rgba(0, 0, 0, 0.25);
+      -webkit-backdrop-filter: blur(6px);
+      backdrop-filter: blur(6px);
+      transition: opacity 0.2s ease;
     }
 
     .ctx-overlay.is-hidden {
@@ -769,12 +772,16 @@
     .ctx-menu {
       position: fixed;
       z-index: 600;
+      left: 50%;
+      width: 65%;
+      max-width: 320px;
       overflow: hidden;
-      border-radius: 12px;
-      background: var(--paper);
+      transform: translateX(-50%);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.96);
       box-shadow:
-        0 4px 24px rgba(0, 0, 0, 0.10),
-        0 1px 4px rgba(0, 0, 0, 0.06);
+        0 8px 32px rgba(0, 0, 0, 0.12),
+        0 2px 8px rgba(0, 0, 0, 0.06);
     }
 
     .ctx-menu.is-hidden {
@@ -782,37 +789,53 @@
     }
 
     .ctx-menu:not(.is-hidden) {
-      animation: ctxMenuIn 0.15s ease;
+      animation: ctxMenuIn 0.18s cubic-bezier(0.32, 0.72, 0, 1);
     }
 
     @keyframes ctxMenuIn {
       from {
         opacity: 0;
-        transform: translateY(-6px) scale(0.97);
+        transform: translateX(-50%) scale(0.95);
       }
       to {
         opacity: 1;
-        transform: translateY(0) scale(1);
+        transform: translateX(-50%) scale(1);
       }
     }
 
     .ctx-item {
       display: flex;
       align-items: center;
+      gap: 12px;
       width: 100%;
       border: 0;
       background: transparent;
-      padding: 15px 20px;
+      padding: 16px 20px;
       text-align: left;
       font-size: 16px;
       line-height: 1;
       cursor: pointer;
       box-sizing: border-box;
       transition: background 0.1s ease;
+      -webkit-tap-highlight-color: transparent;
     }
 
     .ctx-item:active {
-      background: var(--bg);
+      background: rgba(0, 0, 0, 0.05);
+    }
+
+    .ctx-icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      flex-shrink: 0;
+    }
+
+    .ctx-icon svg {
+      width: 18px;
+      height: 18px;
     }
 
     .ctx-edit {
@@ -1450,9 +1473,25 @@
     <div class="ctx-overlay is-hidden" id="ctxOverlay"></div>
 
     <div class="ctx-menu is-hidden" id="ctxMenu" role="menu" aria-label="记录操作">
-      <button class="ctx-item ctx-edit" id="ctxEdit" type="button" role="menuitem">编辑</button>
+      <button class="ctx-item ctx-edit" id="ctxEdit" type="button" role="menuitem">
+        <span class="ctx-icon" aria-hidden="true">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" xmlns="http://www.w3.org/2000/svg">
+            <path d="M14.5 2.5l3 3L6 17H3v-3L14.5 2.5z"/>
+          </svg>
+        </span>
+        <span class="ctx-label">编辑</span>
+      </button>
       <div class="ctx-divider"></div>
-      <button class="ctx-item ctx-delete" id="ctxDelete" type="button" role="menuitem">删除</button>
+      <button class="ctx-item ctx-delete" id="ctxDelete" type="button" role="menuitem">
+        <span class="ctx-icon" aria-hidden="true">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" xmlns="http://www.w3.org/2000/svg">
+            <polyline points="4,6 16,6"/>
+            <path d="M7 6V4h6v2"/>
+            <rect x="5" y="6" width="10" height="11" rx="1"/>
+          </svg>
+        </span>
+        <span class="ctx-label">删除</span>
+      </button>
     </div>
 
     <button class="fab" id="fab" type="button" aria-label="新增记录">
@@ -2022,11 +2061,17 @@
         }
       }
 
+      const settings = loadCategoryConfig();
       return {
         records,
-        category_config: loadCategoryConfig(),
+        __settings__: settings,
+        category_config: settings,
         last_updated: getLocalUpdatedAt()
       };
+    }
+
+    function getSettingsFromGistData(data) {
+      return data?.__settings__ || data?.category_config || null;
     }
 
     function countDataRecords(data) {
@@ -2060,8 +2105,9 @@
           localStorage.setItem(`time_tracker_${dateKey}`, JSON.stringify(sortRecords((records || []).map(normalizeRecord))));
         });
 
-        if (data.category_config) {
-          localStorage.setItem("category_config", JSON.stringify(normalizeCategoryConfig(data.category_config)));
+        const remoteSettings = getSettingsFromGistData(data);
+        if (remoteSettings) {
+          localStorage.setItem("category_config", JSON.stringify(normalizeCategoryConfig(remoteSettings)));
         }
 
         localStorage.setItem("dotlog_last_updated", data.last_updated || new Date().toISOString());
@@ -2091,9 +2137,16 @@
         mergedRecords[dateKey] = sortRecords(merged);
       });
 
+      const mergedSettings = normalizeCategoryConfig(
+        getSettingsFromGistData(remoteData)
+          || getSettingsFromGistData(localData)
+          || cloneDefaultCategoryConfig()
+      );
+
       return {
         records: mergedRecords,
-        category_config: localData.category_config || remoteData.category_config || cloneDefaultCategoryConfig(),
+        __settings__: mergedSettings,
+        category_config: mergedSettings,
         last_updated: new Date().toISOString()
       };
     }
@@ -2431,15 +2484,15 @@
       ctxMenu.classList.remove("is-hidden");
 
       const rect = recordEl.getBoundingClientRect();
-      ctxMenu.style.left = `${rect.left}px`;
-      ctxMenu.style.width = `${rect.width}px`;
-      ctxMenu.style.top = `${rect.bottom + 6}px`;
-      ctxMenu.style.right = "auto";
+      ctxMenu.style.left = "";
+      ctxMenu.style.width = "";
+      ctxMenu.style.right = "";
+      ctxMenu.style.top = `${rect.bottom + 8}px`;
 
       requestAnimationFrame(() => {
         const menuHeight = ctxMenu.offsetHeight;
-        if (rect.bottom + 6 + menuHeight > window.innerHeight - 12) {
-          ctxMenu.style.top = `${rect.top - menuHeight - 6}px`;
+        if (rect.bottom + 8 + menuHeight > window.innerHeight - 16) {
+          ctxMenu.style.top = `${rect.top - menuHeight - 8}px`;
         }
       });
     }

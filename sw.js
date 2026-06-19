@@ -1,4 +1,4 @@
-const CACHE_NAME = "dotlog-v0.7.6-ui-polish";
+const CACHE_NAME = "dotlog-v0.7.7-settings-theme-menu";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (event) => {
