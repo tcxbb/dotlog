@@ -619,6 +619,9 @@
       align-items: start;
       padding: 14px 0;
       border-bottom: 1px solid var(--border);
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
     }
 
     .record-bar {
@@ -703,7 +706,7 @@
       position: fixed;
       inset: 0;
       z-index: 500;
-      background: rgba(0, 0, 0, 0.18);
+      background: transparent;
     }
 
     .ctx-overlay.is-hidden {
@@ -713,29 +716,46 @@
     .ctx-menu {
       position: fixed;
       z-index: 600;
-      min-width: 180px;
       overflow: hidden;
-      border-radius: 14px;
+      border-radius: 12px;
       background: var(--paper);
       box-shadow:
-        0 8px 32px rgba(0, 0, 0, 0.14),
-        0 2px 8px rgba(0, 0, 0, 0.08);
+        0 4px 24px rgba(0, 0, 0, 0.10),
+        0 1px 4px rgba(0, 0, 0, 0.06);
     }
 
     .ctx-menu.is-hidden {
       display: none;
     }
 
+    .ctx-menu:not(.is-hidden) {
+      animation: ctxMenuIn 0.15s ease;
+    }
+
+    @keyframes ctxMenuIn {
+      from {
+        opacity: 0;
+        transform: translateY(-6px) scale(0.97);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
     .ctx-item {
-      display: block;
+      display: flex;
+      align-items: center;
       width: 100%;
       border: 0;
       background: transparent;
-      padding: 14px 20px;
+      padding: 15px 20px;
       text-align: left;
       font-size: 16px;
       line-height: 1;
       cursor: pointer;
+      box-sizing: border-box;
+      transition: background 0.1s ease;
     }
 
     .ctx-item:active {
@@ -752,7 +772,7 @@
 
     .ctx-divider {
       height: 1px;
-      margin: 0;
+      margin: 0 16px;
       background: var(--border);
     }
 
@@ -2288,23 +2308,24 @@
       return openTagIndexes.includes(index);
     }
 
-    function openCtxMenu(index, record, position) {
+    function openCtxMenu(index, record, recordEl) {
       ctxTargetIndex = index;
       ctxTargetRecord = record;
       ctxOverlay.classList.remove("is-hidden");
       ctxMenu.classList.remove("is-hidden");
 
-      const menuWidth = 180;
-      const menuHeight = 110;
-      const padding = 12;
-      let x = position.x - menuWidth / 2;
-      let y = position.y - menuHeight - padding;
+      const rect = recordEl.getBoundingClientRect();
+      ctxMenu.style.left = `${rect.left}px`;
+      ctxMenu.style.width = `${rect.width}px`;
+      ctxMenu.style.top = `${rect.bottom + 6}px`;
+      ctxMenu.style.right = "auto";
 
-      x = Math.max(padding, Math.min(x, window.innerWidth - menuWidth - padding));
-      if (y < padding) y = position.y + padding;
-
-      ctxMenu.style.left = `${x}px`;
-      ctxMenu.style.top = `${y}px`;
+      requestAnimationFrame(() => {
+        const menuHeight = ctxMenu.offsetHeight;
+        if (rect.bottom + 6 + menuHeight > window.innerHeight - 12) {
+          ctxMenu.style.top = `${rect.top - menuHeight - 6}px`;
+        }
+      });
     }
 
     function closeCtxMenu() {
@@ -3242,17 +3263,17 @@
         let longPressTriggered = false;
         let longPressResetTimer = null;
         item.addEventListener("touchstart", (event) => {
+          if (event.target.closest("button, input, select, textarea")) return;
+          event.preventDefault();
           clearTimeout(longPressTimer);
           clearTimeout(longPressResetTimer);
           longPressTriggered = false;
-          const touch = event.touches[0];
-          const position = { x: touch.clientX, y: touch.clientY };
           longPressTimer = setTimeout(() => {
             longPressTriggered = true;
             if (navigator.vibrate) navigator.vibrate(40);
-            openCtxMenu(index, record, position);
+            openCtxMenu(index, record, item);
           }, 500);
-        }, { passive: true });
+        }, { passive: false });
         item.addEventListener("touchend", () => {
           clearTimeout(longPressTimer);
           if (longPressTriggered) {
@@ -3276,7 +3297,7 @@
         });
         item.addEventListener("contextmenu", (event) => {
           event.preventDefault();
-          openCtxMenu(index, record, { x: event.clientX, y: event.clientY });
+          openCtxMenu(index, record, item);
         });
 
         item.append(bar, body, time);
