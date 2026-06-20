@@ -173,6 +173,7 @@
       justify-content: space-between;
       gap: 10px;
       min-height: 21px;
+      padding-inline: 7.142857%;
       padding-top: 2px;
     }
 
@@ -2478,6 +2479,7 @@
     let openCategoryActionMenuIndex = null;
     let openTagActionMenuKey = null;
     let tagDetailDraft = null;
+    let tagDetailReturnScrollY = null;
     let selectedNewCategoryColor = "#7B8EC8";
     let applyingRemoteData = false;
     let syncTimer = null;
@@ -3989,6 +3991,7 @@
       openCategoryActionMenuIndex = null;
       openTagActionMenuKey = null;
       tagDetailDraft = null;
+      tagDetailReturnScrollY = null;
       editingRecordIndex = null;
       editDraft = null;
       closeCalendarMenu();
@@ -4014,6 +4017,7 @@
       openCategoryActionMenuIndex = null;
       openTagActionMenuKey = null;
       tagDetailDraft = null;
+      tagDetailReturnScrollY = null;
       pageHeader.classList.remove("is-hidden");
       tableTools.classList.remove("is-hidden");
       recordsArea.classList.remove("is-hidden");
@@ -4138,6 +4142,7 @@
       const tag = category?.tags[tagIndex];
       if (!tag) return;
 
+      tagDetailReturnScrollY = window.scrollY;
       tagDetailDraft = {
         categoryIndex,
         tagIndex,
@@ -4150,9 +4155,20 @@
       renderSettingsPage();
     }
 
+    function restoreTagDetailScrollPosition(scrollY) {
+      if (scrollY === null) return;
+      const restore = () => window.scrollTo({ top: scrollY, left: 0, behavior: "auto" });
+      requestAnimationFrame(restore);
+      setTimeout(restore, 320);
+    }
+
     function closeTagDetailEditor() {
+      const returnScrollY = tagDetailReturnScrollY;
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
       tagDetailDraft = null;
+      tagDetailReturnScrollY = null;
       renderSettingsPage();
+      restoreTagDetailScrollPosition(returnScrollY);
     }
 
     function saveTagDetailEditor() {
@@ -4189,8 +4205,12 @@
           .filter(Boolean)
       )];
       saveCategoryConfig(config);
+      const returnScrollY = tagDetailReturnScrollY;
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
       tagDetailDraft = null;
+      tagDetailReturnScrollY = null;
       renderSettingsPage();
+      restoreTagDetailScrollPosition(returnScrollY);
     }
 
     function createTagDetailPanel() {
@@ -6060,8 +6080,7 @@
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {
         if (tagDetailDraft) {
-          tagDetailDraft = null;
-          renderSettingsPage();
+          closeTagDetailEditor();
         }
         closeCtxMenu();
         closeBottomSheet();
