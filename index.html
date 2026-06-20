@@ -1592,6 +1592,7 @@
     }
 
     .config-category-head {
+      position: relative;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -1599,6 +1600,7 @@
       min-height: 36px;
       margin-bottom: 7px;
       padding: 0 2px;
+      cursor: pointer;
     }
 
     .config-category-name {
@@ -1611,8 +1613,29 @@
     .config-category-identity {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
       min-width: 0;
+    }
+
+    .config-category-toggle {
+      display: grid;
+      width: 28px;
+      height: 36px;
+      flex-shrink: 0;
+      place-items: center;
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--muted);
+      padding: 0;
+      cursor: pointer;
+      font-size: 20px;
+      line-height: 1;
+    }
+
+    .config-category-toggle:hover {
+      background: rgba(26, 26, 26, 0.04);
+      color: var(--text);
     }
 
     .color-swatch-btn {
@@ -1662,6 +1685,7 @@
     }
 
     .config-actions {
+      position: relative;
       display: flex;
       align-items: center;
       gap: 2px;
@@ -1676,9 +1700,9 @@
       border-radius: 7px;
       background: transparent;
       color: var(--muted);
-      padding: 0 7px;
+      padding: 0;
       cursor: pointer;
-      font-size: 13px;
+      font-size: 20px;
       line-height: 1;
     }
 
@@ -1693,6 +1717,46 @@
       padding: 0;
       font-size: 22px;
       font-weight: 300;
+    }
+
+    .config-action-menu-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .config-action-menu {
+      position: absolute;
+      top: calc(100% + 2px);
+      right: 0;
+      z-index: 30;
+      width: 128px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #FFFFFF;
+      box-shadow: 0 8px 22px rgba(26, 26, 26, 0.12);
+    }
+
+    .config-action-menu button {
+      display: block;
+      width: 100%;
+      min-height: 40px;
+      border: 0;
+      background: transparent;
+      color: var(--text);
+      padding: 8px 12px;
+      text-align: left;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    .config-action-menu button:hover {
+      background: rgba(26, 26, 26, 0.045);
+    }
+
+    .config-action-menu .is-danger {
+      color: #A85F5F;
     }
 
     .text-button {
@@ -1724,7 +1788,9 @@
     }
 
     .config-tags {
-      overflow: hidden;
+      display: grid;
+      gap: 2px;
+      padding: 5px;
       border: 1px solid var(--border);
       border-radius: 9px;
       background: #FFFFFF;
@@ -1736,8 +1802,8 @@
       justify-content: space-between;
       gap: 12px;
       min-height: 45px;
-      padding: 5px 7px 5px 13px;
-      border-bottom: 1px solid rgba(224, 221, 216, 0.72);
+      padding: 5px 3px 5px 9px;
+      border-radius: 7px;
       color: var(--text);
       font-size: 14px;
     }
@@ -1750,43 +1816,27 @@
     }
 
     .config-tag-actions {
+      position: relative;
       display: flex;
       flex-shrink: 0;
       align-items: center;
-      gap: 1px;
     }
 
     .config-tag-editor {
       display: flex;
       align-items: center;
       min-height: 45px;
-      padding: 6px 12px;
-      border-bottom: 1px solid rgba(224, 221, 216, 0.72);
+      padding: 6px 8px;
     }
 
     .config-tag-editor .inline-input {
       width: 100%;
     }
 
-    .config-tag-add {
-      width: 100%;
-      min-height: 42px;
-      border: 0;
-      background: transparent;
+    .config-tags-empty {
       color: var(--muted);
-      padding: 8px 13px;
-      text-align: left;
-      cursor: pointer;
+      padding: 10px 9px;
       font-size: 13px;
-    }
-
-    .config-tag-add:hover {
-      background: rgba(26, 26, 26, 0.035);
-      color: var(--text);
-    }
-
-    .config-tags > :last-child {
-      border-bottom: 0;
     }
 
     .add-category-panel {
@@ -2151,6 +2201,9 @@
     let editingTag = null;
     let addingCategory = false;
     let openColorPickerIndex = null;
+    let collapsedSettingsCategoryIndexes = new Set();
+    let openCategoryActionMenuIndex = null;
+    let openTagActionMenuKey = null;
     let selectedNewCategoryColor = "#7B8EC8";
     let applyingRemoteData = false;
     let syncTimer = null;
@@ -3658,6 +3711,9 @@
 
     function showSettingsPage() {
       settingsMode = "settings";
+      collapsedSettingsCategoryIndexes = new Set();
+      openCategoryActionMenuIndex = null;
+      openTagActionMenuKey = null;
       editingRecordIndex = null;
       editDraft = null;
       closeCalendarMenu();
@@ -3679,6 +3735,9 @@
       editingTag = null;
       addingCategory = false;
       openColorPickerIndex = null;
+      collapsedSettingsCategoryIndexes = new Set();
+      openCategoryActionMenuIndex = null;
+      openTagActionMenuKey = null;
       pageHeader.classList.remove("is-hidden");
       tableTools.classList.remove("is-hidden");
       recordsArea.classList.remove("is-hidden");
@@ -3842,12 +3901,40 @@
     function createSettingsCategory(category, categoryIndex) {
       const item = document.createElement("section");
       item.className = "config-category";
+      const isCollapsed = collapsedSettingsCategoryIndexes.has(categoryIndex);
 
       const head = document.createElement("div");
       head.className = "config-category-head";
 
+      function toggleCategory() {
+        if (isCollapsed) {
+          collapsedSettingsCategoryIndexes.delete(categoryIndex);
+        } else {
+          collapsedSettingsCategoryIndexes.add(categoryIndex);
+          if (addingTagCategoryIndex === categoryIndex) addingTagCategoryIndex = null;
+          if (editingTag?.categoryIndex === categoryIndex) editingTag = null;
+          if (openColorPickerIndex === categoryIndex) openColorPickerIndex = null;
+        }
+        openCategoryActionMenuIndex = null;
+        openTagActionMenuKey = null;
+        renderSettingsPage();
+      }
+
+      head.addEventListener("click", (event) => {
+        if (event.target.closest("button")) return;
+        toggleCategory();
+      });
+
       const nameWrap = document.createElement("div");
       nameWrap.className = "config-category-identity";
+
+      const toggleButton = document.createElement("button");
+      toggleButton.className = "config-category-toggle";
+      toggleButton.type = "button";
+      toggleButton.textContent = isCollapsed ? "›" : "⌄";
+      toggleButton.setAttribute("aria-label", `${isCollapsed ? "展开" : "收起"}分类「${category.name}」`);
+      toggleButton.setAttribute("aria-expanded", String(!isCollapsed));
+      toggleButton.addEventListener("click", toggleCategory);
 
       const swatchButton = document.createElement("button");
       swatchButton.className = "color-swatch-btn";
@@ -3860,7 +3947,7 @@
         openColorPickerIndex = openColorPickerIndex === categoryIndex ? null : categoryIndex;
         renderSettingsPage();
       });
-      nameWrap.append(swatchButton);
+      nameWrap.append(toggleButton, swatchButton);
 
       if (editingCategoryIndex === categoryIndex) {
         nameWrap.append(createInlineInput(
@@ -3887,28 +3974,52 @@
       addTagButton.textContent = "+";
       addTagButton.setAttribute("aria-label", `为「${category.name}」添加标签`);
       addTagButton.addEventListener("click", () => {
+        collapsedSettingsCategoryIndexes.delete(categoryIndex);
         addingTagCategoryIndex = categoryIndex;
+        openCategoryActionMenuIndex = null;
+        openTagActionMenuKey = null;
         renderSettingsPage();
       });
 
-      const editButton = document.createElement("button");
-      editButton.className = "config-head-action";
-      editButton.type = "button";
-      editButton.textContent = "编辑";
-      editButton.setAttribute("aria-label", `编辑分类「${category.name}」名称`);
-      editButton.addEventListener("click", () => {
-        editingCategoryIndex = categoryIndex;
+      const categoryMenuWrap = document.createElement("div");
+      categoryMenuWrap.className = "config-action-menu-wrap";
+      const categoryMenuButton = document.createElement("button");
+      categoryMenuButton.className = "config-head-action";
+      categoryMenuButton.type = "button";
+      categoryMenuButton.textContent = "⋯";
+      categoryMenuButton.setAttribute("aria-label", `分类「${category.name}」操作`);
+      categoryMenuButton.setAttribute("aria-expanded", String(openCategoryActionMenuIndex === categoryIndex));
+      categoryMenuButton.addEventListener("click", () => {
+        openCategoryActionMenuIndex = openCategoryActionMenuIndex === categoryIndex ? null : categoryIndex;
+        openTagActionMenuKey = null;
         renderSettingsPage();
       });
+      categoryMenuWrap.append(categoryMenuButton);
 
-      const deleteButton = document.createElement("button");
-      deleteButton.className = "config-head-action";
-      deleteButton.type = "button";
-      deleteButton.textContent = "删除";
-      deleteButton.setAttribute("aria-label", `删除分类「${category.name}」`);
-      deleteButton.addEventListener("click", () => deleteCategory(categoryIndex));
+      if (openCategoryActionMenuIndex === categoryIndex) {
+        const menu = document.createElement("div");
+        menu.className = "config-action-menu";
+        const editButton = document.createElement("button");
+        editButton.type = "button";
+        editButton.textContent = "编辑名称";
+        editButton.addEventListener("click", () => {
+          editingCategoryIndex = categoryIndex;
+          openCategoryActionMenuIndex = null;
+          renderSettingsPage();
+        });
+        const deleteButton = document.createElement("button");
+        deleteButton.className = "is-danger";
+        deleteButton.type = "button";
+        deleteButton.textContent = "删除分类";
+        deleteButton.addEventListener("click", () => {
+          openCategoryActionMenuIndex = null;
+          deleteCategory(categoryIndex);
+        });
+        menu.append(editButton, deleteButton);
+        categoryMenuWrap.append(menu);
+      }
 
-      actions.append(addTagButton, editButton, deleteButton);
+      actions.append(addTagButton, categoryMenuWrap);
       head.append(nameWrap, actions);
 
       const colorPicker = buildColorPicker(categoryIndex, category.color);
@@ -3945,25 +4056,46 @@
 
         const tagActions = document.createElement("div");
         tagActions.className = "config-tag-actions";
-
-        const editTagButton = document.createElement("button");
-        editTagButton.className = "config-tag-action";
-        editTagButton.type = "button";
-        editTagButton.textContent = "编辑";
-        editTagButton.setAttribute("aria-label", `编辑标签「${tag.name}」`);
-        editTagButton.addEventListener("click", () => {
-          editingTag = { categoryIndex, tagIndex };
+        const tagMenuKey = `${categoryIndex}:${tagIndex}`;
+        const tagMenuWrap = document.createElement("div");
+        tagMenuWrap.className = "config-action-menu-wrap";
+        const tagMenuButton = document.createElement("button");
+        tagMenuButton.className = "config-tag-action";
+        tagMenuButton.type = "button";
+        tagMenuButton.textContent = "⋯";
+        tagMenuButton.setAttribute("aria-label", `标签「${tag.name}」操作`);
+        tagMenuButton.setAttribute("aria-expanded", String(openTagActionMenuKey === tagMenuKey));
+        tagMenuButton.addEventListener("click", () => {
+          openTagActionMenuKey = openTagActionMenuKey === tagMenuKey ? null : tagMenuKey;
+          openCategoryActionMenuIndex = null;
           renderSettingsPage();
         });
+        tagMenuWrap.append(tagMenuButton);
 
-        const removeButton = document.createElement("button");
-        removeButton.className = "config-tag-action";
-        removeButton.type = "button";
-        removeButton.textContent = "删除";
-        removeButton.setAttribute("aria-label", `删除标签「${tag.name}」`);
-        removeButton.addEventListener("click", () => deleteTag(categoryIndex, tagIndex));
+        if (openTagActionMenuKey === tagMenuKey) {
+          const menu = document.createElement("div");
+          menu.className = "config-action-menu";
+          const editTagButton = document.createElement("button");
+          editTagButton.type = "button";
+          editTagButton.textContent = "编辑标签";
+          editTagButton.addEventListener("click", () => {
+            editingTag = { categoryIndex, tagIndex };
+            openTagActionMenuKey = null;
+            renderSettingsPage();
+          });
+          const removeButton = document.createElement("button");
+          removeButton.className = "is-danger";
+          removeButton.type = "button";
+          removeButton.textContent = "删除标签";
+          removeButton.addEventListener("click", () => {
+            openTagActionMenuKey = null;
+            deleteTag(categoryIndex, tagIndex);
+          });
+          menu.append(editTagButton, removeButton);
+          tagMenuWrap.append(menu);
+        }
 
-        tagActions.append(editTagButton, removeButton);
+        tagActions.append(tagMenuWrap);
         tagRow.append(tagName, tagActions);
         tags.append(tagRow);
       });
@@ -3980,19 +4112,15 @@
           }
         ));
         tags.append(editor);
-      } else {
-        const addTagRowButton = document.createElement("button");
-        addTagRowButton.className = "config-tag-add";
-        addTagRowButton.type = "button";
-        addTagRowButton.textContent = "+ 添加标签";
-        addTagRowButton.addEventListener("click", () => {
-          addingTagCategoryIndex = categoryIndex;
-          renderSettingsPage();
-        });
-        tags.append(addTagRowButton);
+      } else if (category.tags.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "config-tags-empty";
+        empty.textContent = "暂无标签";
+        tags.append(empty);
       }
 
-      item.append(head, colorPicker, tags);
+      item.append(head, colorPicker);
+      if (!isCollapsed) item.append(tags);
       return item;
     }
 
@@ -5354,8 +5482,14 @@
       cancelEditingRecord();
     });
 
-    document.addEventListener("click", () => {
+    document.addEventListener("click", (event) => {
       closeCalendarMenu();
+      if (settingsMode !== "settings") return;
+      if (event.target.closest(".config-action-menu-wrap")) return;
+      if (openCategoryActionMenuIndex === null && openTagActionMenuKey === null) return;
+      openCategoryActionMenuIndex = null;
+      openTagActionMenuKey = null;
+      renderSettingsPage();
     });
 
     document.addEventListener("keydown", (event) => {
