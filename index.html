@@ -188,6 +188,7 @@
       overflow: hidden;
       margin: 0;
       padding: 8px 0 6px;
+      touch-action: pan-y;
       user-select: none;
     }
 
@@ -209,7 +210,12 @@
     }
 
     .week-days {
-      transition: transform 0.22s ease, opacity 0.22s ease;
+      transition: transform 0.34s cubic-bezier(0.22, 0.72, 0.2, 1), opacity 0.28s ease;
+      will-change: transform, opacity;
+    }
+
+    .week-days.is-dragging {
+      transition: none;
     }
 
     .week-day {
@@ -692,7 +698,7 @@
     }
 
     .table-tools {
-      padding-top: 16px;
+      padding-top: 5px;
     }
 
     .table-tools.is-hidden {
@@ -801,7 +807,7 @@
     }
 
     .list {
-      margin: 26px 0 0;
+      margin: 9px 0 0;
       padding: 0;
       list-style: none;
     }
@@ -2556,6 +2562,9 @@
     let currentWeekStart = getWeekStart(viewedDate);
     let weekSwipeStartX = 0;
     let weekSwipeStartY = 0;
+    let weekSwipeAxis = null;
+    let weekSwipeAnimating = false;
+    let weekSwipeSuppressClick = false;
     let tableExpanded = false;
     let openCategoryIndexes = [];
     let openTagIndexes = [];
@@ -3453,37 +3462,57 @@
       }
     }
 
-    function animateWeekTransition(direction) {
-      const outX = direction === "left" ? "-100%" : "100%";
-      const inX = direction === "left" ? "100%" : "-100%";
-      weekDays.style.transition = "none";
-      weekDays.style.opacity = "0";
-      weekDays.style.transform = `translateX(${outX})`;
-
-      requestAnimationFrame(() => {
-        weekDays.style.transition = "transform 0.22s ease, opacity 0.22s ease";
-        weekDays.style.transform = `translateX(${inX})`;
-        requestAnimationFrame(() => {
-          weekDays.style.transform = "translateX(0)";
-          weekDays.style.opacity = "1";
-        });
-      });
+    function resetWeekSwipePosition(animate = true) {
+      weekDays.classList.remove("is-dragging");
+      weekDays.style.transition = animate
+        ? "transform 0.32s cubic-bezier(0.22, 0.72, 0.2, 1), opacity 0.26s ease"
+        : "none";
+      weekDays.style.transform = "translate3d(0, 0, 0)";
+      weekDays.style.opacity = "1";
     }
 
-    function changeWeek(dayOffset, direction) {
-      viewedDate = offsetDate(viewedDate, dayOffset);
-      currentWeekStart = getWeekStart(viewedDate);
-      resetDateViewState();
-      animateWeekTransition(direction);
-      render();
+    function completeWeekSwipe(dayOffset, exitDirection) {
+      if (weekSwipeAnimating) return;
+      weekSwipeAnimating = true;
+      const width = Math.max(weekNav.clientWidth, 1);
+
+      weekDays.classList.remove("is-dragging");
+      weekDays.style.transition = "transform 0.2s cubic-bezier(0.4, 0, 1, 1), opacity 0.2s ease";
+      weekDays.style.transform = `translate3d(${exitDirection * width}px, 0, 0)`;
+      weekDays.style.opacity = "0.35";
+
+      setTimeout(() => {
+        viewedDate = offsetDate(viewedDate, dayOffset);
+        currentWeekStart = getWeekStart(viewedDate);
+        resetDateViewState();
+        weekDays.style.transition = "none";
+        weekDays.style.transform = `translate3d(${-exitDirection * width}px, 0, 0)`;
+        weekDays.style.opacity = "0.35";
+        render();
+
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            weekDays.style.transition = "transform 0.34s cubic-bezier(0.22, 0.72, 0.2, 1), opacity 0.28s ease";
+            weekDays.style.transform = "translate3d(0, 0, 0)";
+            weekDays.style.opacity = "1";
+          });
+        });
+
+        setTimeout(() => {
+          weekSwipeAnimating = false;
+          weekDays.style.removeProperty("transition");
+          weekDays.style.removeProperty("transform");
+          weekDays.style.removeProperty("opacity");
+        }, 360);
+      }, 210);
     }
 
     function goToPrevWeek() {
-      changeWeek(-7, "right");
+      completeWeekSwipe(-7, 1);
     }
 
     function goToNextWeek() {
-      changeWeek(7, "left");
+      completeWeekSwipe(7, -1);
     }
 
     function getClassificationDraft(index, record) {
@@ -4093,7 +4122,7 @@
 
     function showSettingsPage() {
       settingsMode = "settings";
-      collapsedSettingsCategoryIndexes = new Set();
+      collapsedSettingsCategoryIndexes = new Set(getCategories().map((category, index) => index));
       openCategoryActionMenuIndex = null;
       openTagActionMenuKey = null;
       tagDetailDraft = null;
@@ -6287,20 +6316,80 @@
     });
 
     weekNav.addEventListener("touchstart", (event) => {
+      if (weekSwipeAnimating) return;
       weekSwipeStartX = event.touches[0].clientX;
       weekSwipeStartY = event.touches[0].clientY;
+      weekSwipeAxis = null;
+      weekSwipeSuppressClick = false;
+    }, { passive: true });
+
+    weekNav.addEventListener("touchmove", (event) => {
+      if (weekSwipeAnimating || event.touches.length === 0) return;
+      const deltaX = event.touches[0].clientX - weekSwipeStartX;
+      const deltaY = event.touches[0].clientY - weekSwipeStartY;
+
+      if (weekSwipeAxis === null) {
+        if (Math.max(Math.abs(deltaX), Math.abs(deltaY)) < 6) return;
+        weekSwipeAxis = Math.abs(deltaX) > Math.abs(deltaY) ? "horizontal" : "vertical";
+      }
+      if (weekSwipeAxis !== "horizontal") return;
+
+      weekSwipeSuppressClick = Math.abs(deltaX) > 8;
+      const width = Math.max(weekNav.clientWidth, 1);
+      const maxDrag = width * 0.55;
+      const displayX = Math.sign(deltaX) * Math.min(Math.abs(deltaX), maxDrag);
+      const fade = Math.min(Math.abs(displayX) / width * 0.24, 0.18);
+      weekDays.classList.add("is-dragging");
+      weekDays.style.transform = `translate3d(${displayX}px, 0, 0)`;
+      weekDays.style.opacity = String(1 - fade);
     }, { passive: true });
 
     weekNav.addEventListener("touchend", (event) => {
+      if (weekSwipeAnimating) return;
       const deltaX = event.changedTouches[0].clientX - weekSwipeStartX;
       const deltaY = event.changedTouches[0].clientY - weekSwipeStartY;
-      if (Math.abs(deltaX) <= Math.abs(deltaY)) return;
-      if (deltaX < -50) {
-        goToNextWeek();
-      } else if (deltaX > 50) {
-        goToPrevWeek();
+      if (weekSwipeAxis === null) {
+        weekSwipeAxis = Math.abs(deltaX) > Math.abs(deltaY) ? "horizontal" : "vertical";
       }
+
+      if (weekSwipeAxis !== "horizontal") {
+        weekSwipeAxis = null;
+        return;
+      }
+
+      weekSwipeSuppressClick = Math.abs(deltaX) > 8;
+      const threshold = Math.max(48, weekNav.clientWidth * 0.18);
+      if (deltaX <= -threshold) {
+        goToNextWeek();
+      } else if (deltaX >= threshold) {
+        goToPrevWeek();
+      } else {
+        resetWeekSwipePosition(true);
+        setTimeout(() => {
+          if (weekSwipeAnimating) return;
+          weekDays.style.removeProperty("transition");
+          weekDays.style.removeProperty("transform");
+          weekDays.style.removeProperty("opacity");
+        }, 340);
+      }
+
+      weekSwipeAxis = null;
+      setTimeout(() => {
+        weekSwipeSuppressClick = false;
+      }, 450);
     }, { passive: true });
+
+    weekNav.addEventListener("touchcancel", () => {
+      if (!weekSwipeAnimating) resetWeekSwipePosition(true);
+      weekSwipeAxis = null;
+      weekSwipeSuppressClick = false;
+    }, { passive: true });
+
+    weekNav.addEventListener("click", (event) => {
+      if (!weekSwipeSuppressClick) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }, true);
 
     document.addEventListener("pointerdown", (event) => {
       if (editingRecordIndex === null) return;
