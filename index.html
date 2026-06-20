@@ -1002,7 +1002,7 @@
       position: fixed;
       z-index: 10001;
       left: 0;
-      width: min(236px, calc(100vw - 32px));
+      width: min(156px, calc(100vw - 32px));
       overflow: hidden;
       transform-origin: top left;
       border-radius: 14px;
@@ -3555,7 +3555,7 @@
       const startX = Math.max(-width, Math.min(width, weekSwipeCurrentX));
       const targetX = exitDirection * width;
       const remainingRatio = Math.min(1, Math.abs(targetX - startX) / width);
-      const duration = Math.max(120, Math.round(300 * remainingRatio));
+      const duration = Math.max(90, Math.round(220 * remainingRatio));
 
       weekDays.classList.remove("is-dragging");
       weekDays.style.transition = "none";
@@ -3684,8 +3684,8 @@
       ctxMenu.classList.remove("is-hidden");
 
       const rect = recordEl.getBoundingClientRect();
-      const preferredWidth = 236;
-      const minWidth = 176;
+      const preferredWidth = 156;
+      const minWidth = 136;
       const maxLeft = Math.max(16, window.innerWidth - minWidth - 16);
       const menuLeft = Math.min(Math.max(16, Math.round(rect.left)), maxLeft);
       const menuWidth = Math.min(preferredWidth, window.innerWidth - menuLeft - 16);
@@ -6420,7 +6420,7 @@
 
       weekSwipeSuppressClick = Math.abs(deltaX) > 8;
       const width = Math.max(weekNav.clientWidth, 1);
-      const maxDrag = width * 0.55;
+      const maxDrag = width * 0.92;
       const displayX = Math.sign(deltaX) * Math.min(Math.abs(deltaX), maxDrag);
       weekDays.classList.add("is-dragging");
       weekDays.style.transform = `translate3d(${displayX}px, 0, 0)`;
