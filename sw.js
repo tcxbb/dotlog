@@ -1,4 +1,4 @@
-const CACHE_NAME = "dotlog-v1.3.0-week-swipe-direct-switch";
+const CACHE_NAME = "dotlog-v1.3.1-top-spacing-button-flash-menu-width";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (event) => {

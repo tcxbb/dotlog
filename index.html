@@ -187,7 +187,7 @@
     .week-nav {
       overflow: hidden;
       margin: 0;
-      padding: 8px 0 6px;
+      padding: 12px 0 6px;
       touch-action: pan-y;
       user-select: none;
     }
@@ -1001,11 +1001,10 @@
     .ctx-menu {
       position: fixed;
       z-index: 10001;
-      left: 50%;
-      width: 65%;
-      max-width: 320px;
+      left: 0;
+      width: min(236px, calc(100vw - 32px));
       overflow: hidden;
-      transform: translateX(-50%);
+      transform-origin: top left;
       border-radius: 14px;
       background: rgba(255, 255, 255, 0.96);
       box-shadow:
@@ -1142,23 +1141,25 @@
     @keyframes ctxMenuIn {
       from {
         opacity: 0;
-        transform: translateX(-50%) scale(0.95);
+        transform: scale(0.95);
       }
       to {
         opacity: 1;
-        transform: translateX(-50%) scale(1);
+        transform: scale(1);
       }
     }
 
     .ctx-item {
-      display: flex;
+      display: grid;
+      grid-template-columns: 20px auto;
+      justify-content: center;
       align-items: center;
       gap: 12px;
       width: 100%;
       border: 0;
       background: transparent;
-      padding: 16px 20px;
-      text-align: left;
+      padding: 16px 18px;
+      text-align: center;
       font-size: 16px;
       line-height: 1;
       cursor: pointer;
@@ -1222,6 +1223,18 @@
 
     .category-pill.is-button {
       cursor: pointer;
+      outline: none;
+      box-shadow: none;
+      -webkit-appearance: none;
+      appearance: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .category-pill.is-button:focus,
+    .category-pill.is-button:focus-visible,
+    .category-pill.is-button:active {
+      outline: none;
+      box-shadow: none;
     }
 
     .label-stack {
@@ -1302,6 +1315,19 @@
       padding: 2px 0;
       text-align: left;
       cursor: pointer;
+      outline: none;
+      box-shadow: none;
+      -webkit-appearance: none;
+      appearance: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .edit-classification-summary:focus,
+    .edit-classification-summary:focus-visible,
+    .edit-classification-summary:active {
+      outline: none;
+      box-shadow: none;
+      background: transparent;
     }
 
     .edit-classification-label {
@@ -1424,11 +1450,26 @@
       font-size: 13px;
       line-height: 1.4;
       cursor: pointer;
+      outline: none;
+      box-shadow: none;
+      -webkit-appearance: none;
+      appearance: none;
+      -webkit-tap-highlight-color: transparent;
     }
 
     .category-option:hover,
     .tag-option:hover {
       border-color: var(--accent);
+    }
+
+    .category-option:focus,
+    .category-option:focus-visible,
+    .category-option:active,
+    .tag-option:focus,
+    .tag-option:focus-visible,
+    .tag-option:active {
+      outline: none;
+      box-shadow: none;
     }
 
     .tag-option.is-selected {
@@ -3643,8 +3684,13 @@
       ctxMenu.classList.remove("is-hidden");
 
       const rect = recordEl.getBoundingClientRect();
-      ctxMenu.style.left = "";
-      ctxMenu.style.width = "";
+      const preferredWidth = 236;
+      const minWidth = 176;
+      const maxLeft = Math.max(16, window.innerWidth - minWidth - 16);
+      const menuLeft = Math.min(Math.max(16, Math.round(rect.left)), maxLeft);
+      const menuWidth = Math.min(preferredWidth, window.innerWidth - menuLeft - 16);
+      ctxMenu.style.left = `${menuLeft}px`;
+      ctxMenu.style.width = `${menuWidth}px`;
       ctxMenu.style.right = "";
       ctxMenu.style.top = `${rect.bottom + 8}px`;
 
