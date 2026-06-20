@@ -211,7 +211,7 @@
 
     .week-days {
       position: relative;
-      transition: transform 0.34s cubic-bezier(0.22, 0.72, 0.2, 1), opacity 0.28s ease;
+      transition: none;
       will-change: transform, opacity;
     }
 
@@ -3563,24 +3563,43 @@
       weekDays.style.opacity = "1";
 
       requestAnimationFrame(() => {
-        weekDays.style.transition = `transform ${duration}ms cubic-bezier(0.22, 0.72, 0.2, 1)`;
-        weekDays.style.transform = `translate3d(${targetX}px, 0, 0)`;
-        weekSwipeCurrentX = targetX;
+        let completionTimer = null;
+        let completed = false;
+        const finishWeekSwipe = (event) => {
+          if (completed || (event && (event.target !== weekDays || event.propertyName !== "transform"))) return;
+          completed = true;
+          weekDays.removeEventListener("transitionend", finishWeekSwipe);
+          if (completionTimer !== null) clearTimeout(completionTimer);
 
-        setTimeout(() => {
           viewedDate = offsetDate(viewedDate, dayOffset);
           currentWeekStart = getWeekStart(viewedDate);
           resetDateViewState();
           weekSwipeCurrentX = 0;
+
+          // Keep transitions disabled while the three slides are rebuilt at the
+          // centered position. Re-enabling them in this same frame can make
+          // WebKit animate the reset from ±100% to 0 a second time.
           weekDays.style.transition = "none";
           weekDays.style.transform = "translate3d(0, 0, 0)";
           weekDays.style.opacity = "1";
           render();
           weekSwipeAnimating = false;
-          weekDays.style.removeProperty("transition");
-          weekDays.style.removeProperty("transform");
-          weekDays.style.removeProperty("opacity");
-        }, duration + 20);
+
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              if (weekSwipeAnimating) return;
+              weekDays.style.removeProperty("transition");
+              weekDays.style.removeProperty("transform");
+              weekDays.style.removeProperty("opacity");
+            });
+          });
+        };
+
+        weekDays.addEventListener("transitionend", finishWeekSwipe);
+        weekDays.style.transition = `transform ${duration}ms cubic-bezier(0.22, 0.72, 0.2, 1)`;
+        weekDays.style.transform = `translate3d(${targetX}px, 0, 0)`;
+        weekSwipeCurrentX = targetX;
+        completionTimer = setTimeout(() => finishWeekSwipe(), duration + 120);
       });
     }
 
