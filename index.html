@@ -1441,12 +1441,6 @@
       color: var(--muted);
     }
 
-    .table-actions {
-      display: flex;
-      justify-content: flex-end;
-      margin-top: 14px;
-    }
-
     .calendar-import-overlay {
       position: fixed;
       inset: 0;
@@ -1465,6 +1459,107 @@
       background: #FFFFFF;
       box-shadow: 0 18px 48px rgba(26, 26, 26, 0.18);
       padding: 20px;
+    }
+
+    .export-range-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 13000;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      background: rgba(26, 26, 26, 0.28);
+    }
+
+    .export-range-panel {
+      width: min(100%, 400px);
+      border-radius: 12px;
+      background: #FFFFFF;
+      padding: 20px;
+      box-shadow: 0 18px 48px rgba(26, 26, 26, 0.18);
+    }
+
+    .export-range-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    .export-range-title {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .export-range-close {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--muted);
+      padding: 0;
+      cursor: pointer;
+      font-size: 20px;
+    }
+
+    .export-range-fields {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .export-range-field {
+      display: grid;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .export-range-input {
+      width: 100%;
+      min-width: 0;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #FFFFFF;
+      color: var(--text);
+      padding: 9px 10px;
+      outline: none;
+    }
+
+    .export-range-input:focus {
+      border-color: var(--accent);
+    }
+
+    .export-range-error {
+      min-height: 20px;
+      margin-top: 8px;
+      color: #C87B7B;
+      font-size: 13px;
+    }
+
+    .export-range-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    @media (max-width: 520px) {
+      .export-range-overlay {
+        align-items: end;
+        padding: 0;
+      }
+
+      .export-range-panel {
+        width: 100%;
+        border-radius: 16px 16px 0 0;
+        padding: 18px 20px calc(28px + env(safe-area-inset-bottom));
+      }
     }
 
     .calendar-import-head {
@@ -2225,6 +2320,10 @@
                 <span class="calendar-menu-icon" aria-hidden="true">↓</span>
                 <span>导出 .ics</span>
               </button>
+              <button class="calendar-menu-item" id="exportCsvOption" type="button">
+                <span class="calendar-menu-icon" aria-hidden="true">↓</span>
+                <span>导出 CSV</span>
+              </button>
             </span>
           </span>
           <button class="icon-button" id="settingsButton" type="button" aria-label="分类与标签管理">
@@ -2267,6 +2366,10 @@
 
     <div class="calendar-import-overlay is-hidden" id="calendarImportOverlay" role="dialog" aria-modal="true" aria-labelledby="calendarImportTitle">
       <section class="calendar-import-panel" id="calendarImportPanel"></section>
+    </div>
+
+    <div class="export-range-overlay is-hidden" id="exportRangeOverlay" role="dialog" aria-modal="true" aria-labelledby="exportRangeTitle">
+      <section class="export-range-panel" id="exportRangePanel"></section>
     </div>
 
     <div class="ctx-overlay is-hidden" id="ctxOverlay"></div>
@@ -2430,8 +2533,11 @@
     const calendarMenu = document.querySelector("#calendarMenu");
     const importCalendarOption = document.querySelector("#importCalendarOption");
     const exportIcsOption = document.querySelector("#exportIcsOption");
+    const exportCsvOption = document.querySelector("#exportCsvOption");
     const calendarImportOverlay = document.querySelector("#calendarImportOverlay");
     const calendarImportPanel = document.querySelector("#calendarImportPanel");
+    const exportRangeOverlay = document.querySelector("#exportRangeOverlay");
+    const exportRangePanel = document.querySelector("#exportRangePanel");
     const exportStatus = document.querySelector("#exportStatus");
     const tableArea = document.querySelector("#tableArea");
     const recordsArea = document.querySelector("#recordsArea");
@@ -3996,6 +4102,7 @@
       editDraft = null;
       closeCalendarMenu();
       closeCalendarImportPanel();
+      closeExportRangePanel();
       closeBottomSheet();
       pageHeader.classList.add("is-hidden");
       fab.classList.add("is-hidden");
@@ -5079,10 +5186,37 @@
       return text;
     }
 
-    function exportCsv(tableData) {
-      const headers = ["序号", "开始时间", "结束时间", "时长", "分类", "标签", "事件", "备注"];
-      const rows = tableData.rows.map((row) => [
-        row.index,
+    function datesInRange(startDate, endDate) {
+      const dates = [];
+      for (let date = startOfDay(startDate); date <= endDate; date = offsetDate(date, 1)) {
+        dates.push(date);
+      }
+      return dates;
+    }
+
+    function exportRangeLabel(startDate, endDate) {
+      const startKey = formatDateKey(startDate);
+      const endKey = formatDateKey(endDate);
+      return startKey === endKey ? startKey : `${startKey}_${endKey}`;
+    }
+
+    function exportCsv(startDate, endDate) {
+      const tableRows = datesInRange(startDate, endDate).flatMap((date) => (
+        buildTimeRows(loadRecords(date), date).rows.map((row) => ({
+          ...row,
+          date: formatDateKey(date)
+        }))
+      ));
+
+      if (tableRows.length === 0) {
+        alert("所选日期区间没有可导出的完整时间记录");
+        return false;
+      }
+
+      const headers = ["序号", "日期", "开始时间", "结束时间", "时长", "分类", "标签", "事件", "备注"];
+      const rows = tableRows.map((row, index) => [
+        index + 1,
+        row.date,
         row.start,
         row.end,
         formatDuration(row.duration),
@@ -5098,11 +5232,13 @@
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `Dotlog_${formatDateKey(viewedDate)}.csv`;
+      link.download = `Dotlog_${exportRangeLabel(startDate, endDate)}.csv`;
       document.body.append(link);
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
+      showExportStatus(`✓ 已导出 ${tableRows.length} 条记录`);
+      return true;
     }
 
     function renderTimeTable(records) {
@@ -5206,16 +5342,7 @@
       total.className = "table-total";
       total.textContent = `合计：${formatDuration(tableData.totalMinutes)}（共 ${tableData.rows.length} 条）`;
 
-      const tableActions = document.createElement("div");
-      tableActions.className = "table-actions";
-      const csvButton = document.createElement("button");
-      csvButton.className = "outline-button";
-      csvButton.type = "button";
-      csvButton.textContent = "导出 CSV";
-      csvButton.addEventListener("click", () => exportCsv(tableData));
-      tableActions.append(csvButton);
-
-      table.append(tableWrap, total, tableActions);
+      table.append(tableWrap, total);
       tableArea.replaceChildren(table);
     }
 
@@ -5271,6 +5398,108 @@
       const opening = calendarMenu.classList.contains("is-hidden");
       calendarMenu.classList.toggle("is-hidden", !opening);
       exportIcs.setAttribute("aria-expanded", String(opening));
+    }
+
+    function closeExportRangePanel() {
+      exportRangeOverlay.classList.add("is-hidden");
+      exportRangePanel.replaceChildren();
+    }
+
+    function parseExportDate(value) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+      const [year, month, day] = value.split("-").map(Number);
+      const date = startOfDay(new Date(year, month - 1, day));
+      return formatDateKey(date) === value ? date : null;
+    }
+
+    function openExportRangePanel(format) {
+      closeCalendarMenu();
+
+      const head = document.createElement("div");
+      head.className = "export-range-head";
+      const title = document.createElement("h2");
+      title.className = "export-range-title";
+      title.id = "exportRangeTitle";
+      title.textContent = format === "ics" ? "导出 .ics" : "导出 CSV";
+      const closeButton = document.createElement("button");
+      closeButton.className = "export-range-close";
+      closeButton.type = "button";
+      closeButton.textContent = "×";
+      closeButton.setAttribute("aria-label", "关闭日期区间选择");
+      closeButton.addEventListener("click", closeExportRangePanel);
+      head.append(title, closeButton);
+
+      const fields = document.createElement("div");
+      fields.className = "export-range-fields";
+      const startField = document.createElement("label");
+      startField.className = "export-range-field";
+      const startLabel = document.createElement("span");
+      startLabel.textContent = "开始日期";
+      const startInput = document.createElement("input");
+      startInput.className = "export-range-input";
+      startInput.type = "date";
+      startInput.value = formatDateKey(viewedDate);
+      startInput.setAttribute("aria-label", "导出开始日期");
+      startField.append(startLabel, startInput);
+
+      const endField = document.createElement("label");
+      endField.className = "export-range-field";
+      const endLabel = document.createElement("span");
+      endLabel.textContent = "结束日期";
+      const endInput = document.createElement("input");
+      endInput.className = "export-range-input";
+      endInput.type = "date";
+      endInput.value = formatDateKey(viewedDate);
+      endInput.setAttribute("aria-label", "导出结束日期");
+      endField.append(endLabel, endInput);
+      fields.append(startField, endField);
+
+      const error = document.createElement("div");
+      error.className = "export-range-error";
+      error.setAttribute("role", "alert");
+
+      const actions = document.createElement("div");
+      actions.className = "export-range-actions";
+      const confirmButton = document.createElement("button");
+      confirmButton.className = "panel-save";
+      confirmButton.type = "button";
+      confirmButton.textContent = "导出";
+      const cancelButton = document.createElement("button");
+      cancelButton.className = "panel-cancel";
+      cancelButton.type = "button";
+      cancelButton.textContent = "取消";
+      cancelButton.addEventListener("click", closeExportRangePanel);
+
+      confirmButton.addEventListener("click", async () => {
+        const startDate = parseExportDate(startInput.value);
+        const endDate = parseExportDate(endInput.value);
+        if (!startDate || !endDate) {
+          error.textContent = "请选择完整的开始和结束日期";
+          return;
+        }
+        if (startDate > endDate) {
+          error.textContent = "结束日期不能早于开始日期";
+          return;
+        }
+
+        error.textContent = "";
+        confirmButton.disabled = true;
+        let exported = false;
+        try {
+          exported = format === "ics"
+            ? await exportIcsFiles(startDate, endDate)
+            : exportCsv(startDate, endDate);
+        } catch {
+          alert("导出失败，请稍后重试");
+        } finally {
+          confirmButton.disabled = false;
+        }
+        if (exported) closeExportRangePanel();
+      });
+
+      actions.append(confirmButton, cancelButton);
+      exportRangePanel.replaceChildren(head, fields, error, actions);
+      exportRangeOverlay.classList.remove("is-hidden");
     }
 
     function closeCalendarImportPanel() {
@@ -5398,43 +5627,46 @@
       calendarImportOverlay.classList.remove("is-hidden");
     }
 
-    async function exportIcsFiles() {
-      const records = loadRecords(viewedDate);
-
-      if (!records.some((record) => record.category)) {
-        alert("请先为至少一条记录选择分类，再导出");
-        return;
-      }
-
+    async function exportIcsFiles(startDate, endDate) {
       if (typeof JSZip === "undefined") {
         alert("导出组件加载失败，请检查网络后重试");
-        return;
+        return false;
       }
 
-      const dateKey = formatDateKey(viewedDate);
-      const { eventsByCategory, eventCount } = buildCalendarEvents(records, viewedDate);
-      const categoriesToExport = Object.keys(eventsByCategory);
+      const eventsByCategory = {};
+      let eventCount = 0;
+      datesInRange(startDate, endDate).forEach((date) => {
+        const dayEvents = buildCalendarEvents(loadRecords(date), date);
+        eventCount += dayEvents.eventCount;
+        Object.entries(dayEvents.eventsByCategory).forEach(([category, events]) => {
+          if (!eventsByCategory[category]) eventsByCategory[category] = [];
+          eventsByCategory[category].push(...events);
+        });
+      });
 
       if (eventCount === 0) {
-        alert("当前没有可导出的完整时间区间");
-        return;
+        alert("所选日期区间没有已分类的完整时间记录");
+        return false;
       }
 
+      const rangeLabel = exportRangeLabel(startDate, endDate);
+      const categoriesToExport = Object.keys(eventsByCategory);
       const zip = new JSZip();
       categoriesToExport.forEach((category) => {
-        zip.file(`${dateKey}_${category}.ics`, buildIcsContent(eventsByCategory[category]));
+        zip.file(`${rangeLabel}_${category}.ics`, buildIcsContent(eventsByCategory[category]));
       });
 
       const content = await zip.generateAsync({ type: "blob" });
       const url = URL.createObjectURL(content);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `时间记录_${dateKey}.zip`;
+      link.download = `时间记录_${rangeLabel}.zip`;
       document.body.append(link);
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
       showExportStatus(`✓ 已导出 ${categoriesToExport.length} 个分类，共 ${eventCount} 个事件`);
+      return true;
     }
 
     function insertNewRecords(date, newRecords) {
@@ -5915,13 +6147,22 @@
     });
 
     exportIcsOption.addEventListener("click", () => {
-      closeCalendarMenu();
-      exportIcsFiles();
+      openExportRangePanel("ics");
+    });
+
+    exportCsvOption.addEventListener("click", () => {
+      openExportRangePanel("csv");
     });
 
     calendarImportOverlay.addEventListener("click", (event) => {
       if (event.target === calendarImportOverlay) {
         closeCalendarImportPanel();
+      }
+    });
+
+    exportRangeOverlay.addEventListener("click", (event) => {
+      if (event.target === exportRangeOverlay) {
+        closeExportRangePanel();
       }
     });
 
@@ -6086,6 +6327,7 @@
         closeBottomSheet();
         closeCalendarMenu();
         closeCalendarImportPanel();
+        closeExportRangePanel();
         closeTimePicker();
       }
     });

@@ -1,4 +1,4 @@
-const CACHE_NAME = "dotlog-v1.2.10-settings-scroll-and-meta-align";
+const CACHE_NAME = "dotlog-v1.2.11-date-range-exports";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (event) => {
