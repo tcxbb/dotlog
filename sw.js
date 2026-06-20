@@ -1,4 +1,4 @@
-const CACHE_NAME = "dotlog-v1.2.12-collapsed-settings-smooth-week-swipe";
+const CACHE_NAME = "dotlog-v1.2.13-adjacent-week-track-tools-menu";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (event) => {

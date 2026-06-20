@@ -193,7 +193,7 @@
     }
 
     .week-header,
-    .week-days {
+    .week-slide {
       display: grid;
       grid-template-columns: repeat(7, 1fr);
       text-align: center;
@@ -210,8 +210,28 @@
     }
 
     .week-days {
+      position: relative;
       transition: transform 0.34s cubic-bezier(0.22, 0.72, 0.2, 1), opacity 0.28s ease;
       will-change: transform, opacity;
+    }
+
+    .week-slide {
+      width: 100%;
+    }
+
+    .week-slide.is-previous,
+    .week-slide.is-next {
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+
+    .week-slide.is-previous {
+      transform: translateX(-100%);
+    }
+
+    .week-slide.is-next {
+      transform: translateX(100%);
     }
 
     .week-days.is-dragging {
@@ -2299,15 +2319,8 @@
       <div class="page-header">
         <div class="month-title" id="monthTitle"></div>
         <div class="header-actions">
-          <button class="icon-button" id="tableToggle" type="button" title="生成今日时间记录表" aria-label="生成今日时间记录表">
-            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <line x1="4" y1="6" x2="16" y2="6"/>
-              <line x1="4" y1="10" x2="16" y2="10"/>
-              <line x1="4" y1="14" x2="10" y2="14"/>
-            </svg>
-          </button>
           <span class="calendar-menu-wrap" id="calendarMenuWrap">
-            <button class="icon-button" id="exportIcs" type="button" title="日历导入与导出" aria-label="打开日历菜单" aria-expanded="false">
+            <button class="icon-button" id="exportIcs" type="button" title="导入、导出与列表" aria-label="打开工具菜单" aria-expanded="false">
               <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <rect x="3" y="4" width="14" height="13" rx="2"/>
                 <line x1="3" y1="8" x2="17" y2="8"/>
@@ -2329,6 +2342,10 @@
               <button class="calendar-menu-item" id="exportCsvOption" type="button">
                 <span class="calendar-menu-icon" aria-hidden="true">↓</span>
                 <span>导出 CSV</span>
+              </button>
+              <button class="calendar-menu-item" id="tableToggle" type="button">
+                <span class="calendar-menu-icon" aria-hidden="true">☷</span>
+                <span>列表</span>
               </button>
             </span>
           </span>
@@ -3435,20 +3452,22 @@
       render();
     }
 
-    function renderWeekNav() {
-      weekDays.replaceChildren();
-      const todayDate = startOfDay(new Date());
-
-      monthTitle.textContent = isSameDate(viewedDate, todayDate)
-        ? "今天"
-        : formatShortDateLabel(viewedDate);
+    function createWeekSlide(weekStart, position, todayDate) {
+      const slide = document.createElement("div");
+      slide.className = `week-slide is-${position}`;
+      const isCurrent = position === "current";
+      if (!isCurrent) {
+        slide.setAttribute("aria-hidden", "true");
+        slide.inert = true;
+      }
 
       for (let index = 0; index < 7; index += 1) {
-        const date = offsetDate(currentWeekStart, index);
+        const date = offsetDate(weekStart, index);
         const day = document.createElement("button");
         day.className = "week-day";
         day.type = "button";
         day.setAttribute("aria-label", formatDateLabel(date));
+        if (!isCurrent) day.tabIndex = -1;
         if (isSameDate(date, todayDate)) day.classList.add("is-today");
         if (isSameDate(date, viewedDate)) day.classList.add("is-selected");
 
@@ -3457,9 +3476,24 @@
         number.textContent = String(date.getDate());
         day.append(number);
 
-        day.addEventListener("click", () => setViewedDate(date));
-        weekDays.append(day);
+        if (isCurrent) day.addEventListener("click", () => setViewedDate(date));
+        slide.append(day);
       }
+
+      return slide;
+    }
+
+    function renderWeekNav() {
+      const todayDate = startOfDay(new Date());
+      monthTitle.textContent = isSameDate(viewedDate, todayDate)
+        ? "今天"
+        : formatShortDateLabel(viewedDate);
+
+      weekDays.replaceChildren(
+        createWeekSlide(offsetDate(currentWeekStart, -7), "previous", todayDate),
+        createWeekSlide(currentWeekStart, "current", todayDate),
+        createWeekSlide(offsetDate(currentWeekStart, 7), "next", todayDate)
+      );
     }
 
     function resetWeekSwipePosition(animate = true) {
@@ -3477,34 +3511,23 @@
       const width = Math.max(weekNav.clientWidth, 1);
 
       weekDays.classList.remove("is-dragging");
-      weekDays.style.transition = "transform 0.2s cubic-bezier(0.4, 0, 1, 1), opacity 0.2s ease";
+      weekDays.style.transition = "transform 0.3s cubic-bezier(0.22, 0.72, 0.2, 1)";
       weekDays.style.transform = `translate3d(${exitDirection * width}px, 0, 0)`;
-      weekDays.style.opacity = "0.35";
+      weekDays.style.opacity = "1";
 
       setTimeout(() => {
         viewedDate = offsetDate(viewedDate, dayOffset);
         currentWeekStart = getWeekStart(viewedDate);
         resetDateViewState();
         weekDays.style.transition = "none";
-        weekDays.style.transform = `translate3d(${-exitDirection * width}px, 0, 0)`;
-        weekDays.style.opacity = "0.35";
+        weekDays.style.transform = "translate3d(0, 0, 0)";
+        weekDays.style.opacity = "1";
         render();
-
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            weekDays.style.transition = "transform 0.34s cubic-bezier(0.22, 0.72, 0.2, 1), opacity 0.28s ease";
-            weekDays.style.transform = "translate3d(0, 0, 0)";
-            weekDays.style.opacity = "1";
-          });
-        });
-
-        setTimeout(() => {
-          weekSwipeAnimating = false;
-          weekDays.style.removeProperty("transition");
-          weekDays.style.removeProperty("transform");
-          weekDays.style.removeProperty("opacity");
-        }, 360);
-      }, 210);
+        weekSwipeAnimating = false;
+        weekDays.style.removeProperty("transition");
+        weekDays.style.removeProperty("transform");
+        weekDays.style.removeProperty("opacity");
+      }, 310);
     }
 
     function goToPrevWeek() {
@@ -6149,6 +6172,7 @@
     });
 
     tableToggle.addEventListener("click", () => {
+      closeCalendarMenu();
       const records = loadRecords(viewedDate);
 
       if (!tableExpanded && buildTimeRows(records, viewedDate).rows.length === 0) {
@@ -6338,10 +6362,9 @@
       const width = Math.max(weekNav.clientWidth, 1);
       const maxDrag = width * 0.55;
       const displayX = Math.sign(deltaX) * Math.min(Math.abs(deltaX), maxDrag);
-      const fade = Math.min(Math.abs(displayX) / width * 0.24, 0.18);
       weekDays.classList.add("is-dragging");
       weekDays.style.transform = `translate3d(${displayX}px, 0, 0)`;
-      weekDays.style.opacity = String(1 - fade);
+      weekDays.style.opacity = "1";
     }, { passive: true });
 
     weekNav.addEventListener("touchend", (event) => {
