@@ -406,6 +406,64 @@
       border-color: var(--accent);
     }
 
+    .entry-suggestion {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      min-height: 38px;
+      margin-top: 8px;
+      border: 1px solid rgba(224, 221, 216, 0.82);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.58);
+      padding: 4px 5px 4px 11px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .entry-suggestion.is-hidden {
+      display: none;
+    }
+
+    .entry-suggestion-copy {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .entry-suggestion-value {
+      color: var(--text);
+      font-weight: 500;
+    }
+
+    .entry-suggestion-actions {
+      display: flex;
+      flex-shrink: 0;
+      align-items: center;
+      gap: 1px;
+    }
+
+    .entry-suggestion-action {
+      display: grid;
+      width: 34px;
+      height: 30px;
+      place-items: center;
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--muted);
+      padding: 0;
+      cursor: pointer;
+      font-size: 17px;
+      line-height: 1;
+    }
+
+    .entry-suggestion-action:hover {
+      background: rgba(26, 26, 26, 0.045);
+      color: var(--text);
+    }
+
     .sheet-input::placeholder {
       color: var(--muted);
     }
@@ -2244,6 +2302,15 @@
           autocomplete="off"
           enterkeyhint="done"
         >
+        <div class="entry-suggestion is-hidden" id="entrySuggestion" aria-live="polite">
+          <span class="entry-suggestion-copy">
+            推荐：<span class="entry-suggestion-value" id="entrySuggestionValue"></span>
+          </span>
+          <span class="entry-suggestion-actions">
+            <button class="entry-suggestion-action" id="acceptEntrySuggestion" type="button" aria-label="使用推荐" title="使用推荐">✓</button>
+            <button class="entry-suggestion-action" id="dismissEntrySuggestion" type="button" aria-label="忽略推荐" title="忽略推荐">×</button>
+          </span>
+        </div>
         <div class="entry-time-row">
           <span class="entry-time-label">时间：</span>
           <input class="entry-time-input" id="entryStartTime" type="text" inputmode="none" readonly aria-label="事件开始时间">
@@ -2296,6 +2363,10 @@
     const entryStartTime = document.querySelector("#entryStartTime");
     const entryStartAuto = document.querySelector("#entryStartAuto");
     const entryEndTime = document.querySelector("#entryEndTime");
+    const entrySuggestion = document.querySelector("#entrySuggestion");
+    const entrySuggestionValue = document.querySelector("#entrySuggestionValue");
+    const acceptEntrySuggestion = document.querySelector("#acceptEntrySuggestion");
+    const dismissEntrySuggestion = document.querySelector("#dismissEntrySuggestion");
     const entryClassification = document.querySelector("#entryClassification");
     const insertPlusBtn = document.querySelector("#insertPlus");
     const backfillToggle = document.querySelector("#backfillToggle");
@@ -2353,6 +2424,7 @@
     let openTagIndexes = [];
     let classificationDrafts = {};
     let entryClassificationDraft = { category: null, tags: [] };
+    let dismissedEntrySuggestionKey = null;
     let entryStartTimeTouched = false;
     let exportStatusTimer = null;
     let bottomSheetCloseTimer = null;
@@ -5331,6 +5403,72 @@
       splitHint.classList.toggle("is-hidden", !(entryInput.value.trim() && entryInput.value.includes("+")));
     }
 
+    function findEntrySuggestion(inputText) {
+      const text = inputText.trim();
+      if (!text) return null;
+
+      let bestMatch = null;
+      getCategories().forEach((category) => {
+        category.tags.forEach((tag) => {
+          const triggers = Array.isArray(tag.triggers) ? tag.triggers : [];
+          triggers.forEach((rawTrigger) => {
+            const trigger = String(rawTrigger).trim();
+            if (!trigger || !text.includes(trigger)) return;
+            if (bestMatch && trigger.length <= bestMatch.trigger.length) return;
+            bestMatch = {
+              categoryName: category.name,
+              tagName: tag.name,
+              trigger,
+              key: JSON.stringify([category.name, tag.name, trigger])
+            };
+          });
+        });
+      });
+      return bestMatch;
+    }
+
+    function renderEntrySuggestion() {
+      const suggestion = findEntrySuggestion(entryInput.value);
+      const hidden = !suggestion || suggestion.key === dismissedEntrySuggestionKey;
+      entrySuggestion.classList.toggle("is-hidden", hidden);
+      entrySuggestionValue.textContent = hidden
+        ? ""
+        : `${suggestion.categoryName} + #${suggestion.tagName}`;
+    }
+
+    function resetEntrySuggestion() {
+      dismissedEntrySuggestionKey = null;
+      renderEntrySuggestion();
+    }
+
+    function acceptCurrentEntrySuggestion() {
+      const suggestion = findEntrySuggestion(entryInput.value);
+      if (!suggestion || suggestion.key === dismissedEntrySuggestionKey) return;
+
+      if (entryClassificationDraft.category === suggestion.categoryName) {
+        const tags = entryClassificationDraft.tags.includes(suggestion.tagName)
+          ? [...entryClassificationDraft.tags]
+          : [...entryClassificationDraft.tags, suggestion.tagName];
+        entryClassificationDraft = { category: suggestion.categoryName, tags };
+      } else {
+        entryClassificationDraft = {
+          category: suggestion.categoryName,
+          tags: [suggestion.tagName]
+        };
+      }
+
+      dismissedEntrySuggestionKey = suggestion.key;
+      renderEntryClassification();
+      renderEntrySuggestion();
+    }
+
+    function dismissCurrentEntrySuggestion() {
+      const suggestion = findEntrySuggestion(entryInput.value);
+      if (!suggestion) return;
+      dismissedEntrySuggestionKey = suggestion.key;
+      renderEntrySuggestion();
+    }
+
     function renderEntryClassification() {
       const categoryRow = document.createElement("div");
       categoryRow.className = "entry-classification-row";
@@ -5510,6 +5648,7 @@
       sheetOverlay.classList.remove("is-hidden");
       fab.classList.add("is-hidden");
       renderEntryClassification();
+      renderEntrySuggestion();
       resetEntryEndTime();
       refreshEntryStartTime(true);
       requestAnimationFrame(() => {
@@ -5601,6 +5740,7 @@
       insertNewRecords(targetDate, [newRecord]);
       entryInput.value = "";
       updateSplitHint();
+      resetEntrySuggestion();
       resetEntryClassification();
       resetEntryStartTime();
       toggleBackfillPanel(false);
@@ -5689,6 +5829,7 @@
       currentWeekStart = getWeekStart(viewedDate);
       entryInput.value = "";
       updateSplitHint();
+      resetEntrySuggestion();
       resetEntryClassification();
       resetEntryStartTime();
       resetEntryEndTime();
@@ -5761,11 +5902,16 @@
     ctxOverlay.addEventListener("click", closeCtxMenu);
 
     entryInput.addEventListener("input", () => {
+      dismissedEntrySuggestionKey = null;
       updateSplitHint();
+      renderEntrySuggestion();
       if (entryInput.value.trim() && backfillError.textContent === "请填写事件描述") {
         backfillError.classList.add("is-hidden");
       }
     });
+
+    acceptEntrySuggestion.addEventListener("click", acceptCurrentEntrySuggestion);
+    dismissEntrySuggestion.addEventListener("click", dismissCurrentEntrySuggestion);
 
     entryStartTime.addEventListener("input", () => {
       entryStartTimeTouched = true;
@@ -5794,7 +5940,9 @@
       entryInput.value = entryInput.value.slice(0, start) + insertion + entryInput.value.slice(end);
       const newPosition = start + insertion.length;
       entryInput.setSelectionRange(newPosition, newPosition);
+      dismissedEntrySuggestionKey = null;
       updateSplitHint();
+      renderEntrySuggestion();
       entryInput.focus();
     });
 

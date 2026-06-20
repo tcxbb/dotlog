@@ -1,4 +1,4 @@
-const CACHE_NAME = "dotlog-v1.2.5-tag-trigger-editor";
+const CACHE_NAME = "dotlog-v1.2.6-entry-tag-suggestion";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (event) => {
