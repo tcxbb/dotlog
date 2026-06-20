@@ -1,4 +1,4 @@
-const CACHE_NAME = "dotlog-v1.2.2-sheet-overlay-layer";
+const CACHE_NAME = "dotlog-v1.2.3-grouped-tag-settings";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (event) => {

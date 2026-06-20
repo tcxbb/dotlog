@@ -1531,12 +1531,11 @@
 
     .category-config-list {
       display: grid;
-      gap: 20px;
+      gap: 18px;
     }
 
     .config-category {
-      padding-bottom: 18px;
-      border-bottom: 1px solid var(--border);
+      min-width: 0;
     }
 
     .settings-section {
@@ -1597,11 +1596,16 @@
       align-items: center;
       justify-content: space-between;
       gap: 12px;
-      margin-bottom: 8px;
+      min-height: 36px;
+      margin-bottom: 7px;
+      padding: 0 2px;
     }
 
     .config-category-name {
+      overflow: hidden;
       font-weight: 600;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .config-category-identity {
@@ -1612,10 +1616,10 @@
     }
 
     .color-swatch-btn {
-      width: 24px;
-      height: 24px;
+      width: 14px;
+      height: 14px;
       flex-shrink: 0;
-      border: 2px solid rgba(255, 255, 255, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.7);
       border-radius: 999px;
       box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12);
       cursor: pointer;
@@ -1659,8 +1663,36 @@
 
     .config-actions {
       display: flex;
-      gap: 10px;
+      align-items: center;
+      gap: 2px;
       white-space: nowrap;
+    }
+
+    .config-head-action,
+    .config-tag-action {
+      min-width: 36px;
+      min-height: 36px;
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--muted);
+      padding: 0 7px;
+      cursor: pointer;
+      font-size: 13px;
+      line-height: 1;
+    }
+
+    .config-head-action:hover,
+    .config-tag-action:hover {
+      background: rgba(26, 26, 26, 0.045);
+      color: var(--text);
+    }
+
+    .config-head-add {
+      min-width: 32px;
+      padding: 0;
+      font-size: 22px;
+      font-weight: 300;
     }
 
     .text-button {
@@ -1692,40 +1724,69 @@
     }
 
     .config-tags {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      align-items: center;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: #FFFFFF;
     }
 
     .config-tag {
-      display: inline-flex;
+      display: flex;
       align-items: center;
-      gap: 4px;
-      border-radius: 999px;
-      background: #FFFFFF;
-      border: 1px solid var(--border);
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 45px;
+      padding: 5px 7px 5px 13px;
+      border-bottom: 1px solid rgba(224, 221, 216, 0.72);
       color: var(--text);
-      padding: 4px 9px;
-      font-size: 13px;
-      line-height: 1.4;
+      font-size: 14px;
     }
 
     .config-tag-name {
+      min-width: 0;
+      flex: 1;
       cursor: default;
+      overflow-wrap: anywhere;
     }
 
-    .remove-tag {
+    .config-tag-actions {
+      display: flex;
+      flex-shrink: 0;
+      align-items: center;
+      gap: 1px;
+    }
+
+    .config-tag-editor {
+      display: flex;
+      align-items: center;
+      min-height: 45px;
+      padding: 6px 12px;
+      border-bottom: 1px solid rgba(224, 221, 216, 0.72);
+    }
+
+    .config-tag-editor .inline-input {
+      width: 100%;
+    }
+
+    .config-tag-add {
+      width: 100%;
+      min-height: 42px;
       border: 0;
       background: transparent;
       color: var(--muted);
-      padding: 0;
+      padding: 8px 13px;
+      text-align: left;
       cursor: pointer;
-      line-height: 1;
+      font-size: 13px;
     }
 
-    .remove-tag:hover {
+    .config-tag-add:hover {
+      background: rgba(26, 26, 26, 0.035);
       color: var(--text);
+    }
+
+    .config-tags > :last-child {
+      border-bottom: 0;
     }
 
     .add-category-panel {
@@ -3820,22 +3881,34 @@
       const actions = document.createElement("div");
       actions.className = "config-actions";
 
+      const addTagButton = document.createElement("button");
+      addTagButton.className = "config-head-action config-head-add";
+      addTagButton.type = "button";
+      addTagButton.textContent = "+";
+      addTagButton.setAttribute("aria-label", `为「${category.name}」添加标签`);
+      addTagButton.addEventListener("click", () => {
+        addingTagCategoryIndex = categoryIndex;
+        renderSettingsPage();
+      });
+
       const editButton = document.createElement("button");
-      editButton.className = "text-button";
+      editButton.className = "config-head-action";
       editButton.type = "button";
-      editButton.textContent = "编辑名称";
+      editButton.textContent = "编辑";
+      editButton.setAttribute("aria-label", `编辑分类「${category.name}」名称`);
       editButton.addEventListener("click", () => {
         editingCategoryIndex = categoryIndex;
         renderSettingsPage();
       });
 
       const deleteButton = document.createElement("button");
-      deleteButton.className = "text-button";
+      deleteButton.className = "config-head-action";
       deleteButton.type = "button";
       deleteButton.textContent = "删除";
+      deleteButton.setAttribute("aria-label", `删除分类「${category.name}」`);
       deleteButton.addEventListener("click", () => deleteCategory(categoryIndex));
 
-      actions.append(editButton, deleteButton);
+      actions.append(addTagButton, editButton, deleteButton);
       head.append(nameWrap, actions);
 
       const colorPicker = buildColorPicker(categoryIndex, category.color);
@@ -3845,7 +3918,9 @@
 
       category.tags.forEach((tag, tagIndex) => {
         if (editingTag && editingTag.categoryIndex === categoryIndex && editingTag.tagIndex === tagIndex) {
-          tags.append(createInlineInput(
+          const editor = document.createElement("div");
+          editor.className = "config-tag-editor";
+          editor.append(createInlineInput(
             tag.name,
             (input) => updateTagName(categoryIndex, tagIndex, input, tag.name),
             () => {
@@ -3853,11 +3928,12 @@
               renderSettingsPage();
             }
           ));
+          tags.append(editor);
           return;
         }
 
-        const tagPill = document.createElement("span");
-        tagPill.className = "config-tag";
+        const tagRow = document.createElement("div");
+        tagRow.className = "config-tag";
 
         const tagName = document.createElement("span");
         tagName.className = "config-tag-name";
@@ -3867,18 +3943,35 @@
           renderSettingsPage();
         });
 
+        const tagActions = document.createElement("div");
+        tagActions.className = "config-tag-actions";
+
+        const editTagButton = document.createElement("button");
+        editTagButton.className = "config-tag-action";
+        editTagButton.type = "button";
+        editTagButton.textContent = "编辑";
+        editTagButton.setAttribute("aria-label", `编辑标签「${tag.name}」`);
+        editTagButton.addEventListener("click", () => {
+          editingTag = { categoryIndex, tagIndex };
+          renderSettingsPage();
+        });
+
         const removeButton = document.createElement("button");
-        removeButton.className = "remove-tag";
+        removeButton.className = "config-tag-action";
         removeButton.type = "button";
-        removeButton.textContent = "×";
+        removeButton.textContent = "删除";
+        removeButton.setAttribute("aria-label", `删除标签「${tag.name}」`);
         removeButton.addEventListener("click", () => deleteTag(categoryIndex, tagIndex));
 
-        tagPill.append(tagName, removeButton);
-        tags.append(tagPill);
+        tagActions.append(editTagButton, removeButton);
+        tagRow.append(tagName, tagActions);
+        tags.append(tagRow);
       });
 
       if (addingTagCategoryIndex === categoryIndex) {
-        tags.append(createInlineInput(
+        const editor = document.createElement("div");
+        editor.className = "config-tag-editor";
+        editor.append(createInlineInput(
           "",
           (input) => addTagToCategory(categoryIndex, input),
           () => {
@@ -3886,16 +3979,17 @@
             renderSettingsPage();
           }
         ));
+        tags.append(editor);
       } else {
-        const addTagButton = document.createElement("button");
-        addTagButton.className = "text-button";
-        addTagButton.type = "button";
-        addTagButton.textContent = "+ 添加标签";
-        addTagButton.addEventListener("click", () => {
+        const addTagRowButton = document.createElement("button");
+        addTagRowButton.className = "config-tag-add";
+        addTagRowButton.type = "button";
+        addTagRowButton.textContent = "+ 添加标签";
+        addTagRowButton.addEventListener("click", () => {
           addingTagCategoryIndex = categoryIndex;
           renderSettingsPage();
         });
-        tags.append(addTagButton);
+        tags.append(addTagRowButton);
       }
 
       item.append(head, colorPicker, tags);
