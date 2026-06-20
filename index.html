@@ -1839,6 +1839,165 @@
       font-size: 13px;
     }
 
+    .tag-detail-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 13000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: rgba(26, 26, 26, 0.32);
+    }
+
+    .tag-detail-panel {
+      width: min(100%, 440px);
+      max-height: calc(100dvh - 40px);
+      overflow-y: auto;
+      border-radius: 14px;
+      background: var(--paper);
+      padding: 20px;
+      box-shadow: 0 14px 40px rgba(26, 26, 26, 0.18);
+    }
+
+    .tag-detail-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    .tag-detail-title {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .tag-detail-close {
+      display: grid;
+      width: 36px;
+      height: 36px;
+      place-items: center;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--muted);
+      padding: 0;
+      cursor: pointer;
+      font-size: 21px;
+      line-height: 1;
+    }
+
+    .tag-detail-close:hover {
+      background: rgba(26, 26, 26, 0.045);
+      color: var(--text);
+    }
+
+    .tag-detail-fields {
+      display: grid;
+      gap: 18px;
+    }
+
+    .tag-detail-field {
+      display: grid;
+      gap: 7px;
+    }
+
+    .tag-detail-label {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .tag-detail-input {
+      width: 100%;
+      min-width: 0;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #FFFFFF;
+      color: var(--text);
+      padding: 9px 11px;
+      outline: none;
+    }
+
+    .tag-detail-input:focus {
+      border-color: var(--accent);
+    }
+
+    .tag-trigger-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      min-height: 28px;
+    }
+
+    .tag-trigger-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      min-height: 28px;
+      border: 1px solid rgba(224, 221, 216, 0.82);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.72);
+      color: var(--text);
+      padding: 3px 5px 3px 10px;
+      font-size: 13px;
+    }
+
+    .tag-trigger-remove {
+      display: grid;
+      width: 22px;
+      height: 22px;
+      place-items: center;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--muted);
+      padding: 0;
+      cursor: pointer;
+      font-size: 16px;
+      line-height: 1;
+    }
+
+    .tag-trigger-remove:hover {
+      background: rgba(26, 26, 26, 0.05);
+      color: var(--text);
+    }
+
+    .tag-trigger-empty {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .tag-trigger-add-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+    }
+
+    .tag-trigger-add {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text);
+      padding: 8px 13px;
+      cursor: pointer;
+    }
+
+    .tag-trigger-add:hover {
+      border-color: var(--accent);
+    }
+
+    .tag-detail-error {
+      min-height: 18px;
+      color: #C87B7B;
+      font-size: 13px;
+    }
+
+    .tag-detail-actions {
+      margin-top: 2px;
+    }
+
     .add-category-panel {
       display: grid;
       gap: 10px;
@@ -1924,6 +2083,18 @@
       .sync-actions,
       .sync-status-row {
         padding-left: 0;
+      }
+
+      .tag-detail-overlay {
+        align-items: flex-end;
+        padding: 0;
+      }
+
+      .tag-detail-panel {
+        width: 100%;
+        max-height: calc(100dvh - 16px);
+        border-radius: 16px 16px 0 0;
+        padding: 18px 20px calc(28px + env(safe-area-inset-bottom));
       }
     }
 
@@ -2204,6 +2375,7 @@
     let collapsedSettingsCategoryIndexes = new Set();
     let openCategoryActionMenuIndex = null;
     let openTagActionMenuKey = null;
+    let tagDetailDraft = null;
     let selectedNewCategoryColor = "#7B8EC8";
     let applyingRemoteData = false;
     let syncTimer = null;
@@ -3714,6 +3886,7 @@
       collapsedSettingsCategoryIndexes = new Set();
       openCategoryActionMenuIndex = null;
       openTagActionMenuKey = null;
+      tagDetailDraft = null;
       editingRecordIndex = null;
       editDraft = null;
       closeCalendarMenu();
@@ -3738,6 +3911,7 @@
       collapsedSettingsCategoryIndexes = new Set();
       openCategoryActionMenuIndex = null;
       openTagActionMenuKey = null;
+      tagDetailDraft = null;
       pageHeader.classList.remove("is-hidden");
       tableTools.classList.remove("is-hidden");
       recordsArea.classList.remove("is-hidden");
@@ -3855,6 +4029,217 @@
       saveCategoryConfig(config);
       editingTag = null;
       renderSettingsPage();
+    }
+
+    function openTagDetailEditor(categoryIndex, tagIndex) {
+      const category = loadCategoryConfig().categories[categoryIndex];
+      const tag = category?.tags[tagIndex];
+      if (!tag) return;
+
+      tagDetailDraft = {
+        categoryIndex,
+        tagIndex,
+        name: tag.name,
+        triggers: Array.isArray(tag.triggers) ? [...tag.triggers] : [],
+        error: ""
+      };
+      openCategoryActionMenuIndex = null;
+      openTagActionMenuKey = null;
+      renderSettingsPage();
+    }
+
+    function closeTagDetailEditor() {
+      tagDetailDraft = null;
+      renderSettingsPage();
+    }
+
+    function saveTagDetailEditor() {
+      if (!tagDetailDraft) return;
+      const name = tagDetailDraft.name.trim();
+      if (!name) {
+        tagDetailDraft.error = "请输入标签名称";
+        renderSettingsPage();
+        return;
+      }
+
+      const config = loadCategoryConfig();
+      const category = config.categories[tagDetailDraft.categoryIndex];
+      const tag = category?.tags[tagDetailDraft.tagIndex];
+      if (!category || !tag) {
+        tagDetailDraft.error = "标签不存在，请关闭后重试";
+        renderSettingsPage();
+        return;
+      }
+
+      const duplicateName = category.tags.some((item, index) => (
+        index !== tagDetailDraft.tagIndex && item.name === name
+      ));
+      if (duplicateName) {
+        tagDetailDraft.error = "标签名称已存在";
+        renderSettingsPage();
+        return;
+      }
+
+      tag.name = name;
+      tag.triggers = [...new Set(
+        tagDetailDraft.triggers
+          .map((trigger) => String(trigger).trim())
+          .filter(Boolean)
+      )];
+      saveCategoryConfig(config);
+      tagDetailDraft = null;
+      renderSettingsPage();
+    }
+
+    function createTagDetailPanel() {
+      if (!tagDetailDraft) return null;
+
+      const overlay = document.createElement("div");
+      overlay.className = "tag-detail-overlay";
+      overlay.addEventListener("click", (event) => {
+        if (event.target === overlay) closeTagDetailEditor();
+      });
+
+      const panel = document.createElement("section");
+      panel.className = "tag-detail-panel";
+      panel.setAttribute("role", "dialog");
+      panel.setAttribute("aria-modal", "true");
+      panel.setAttribute("aria-labelledby", "tagDetailTitle");
+
+      const head = document.createElement("div");
+      head.className = "tag-detail-head";
+      const title = document.createElement("h3");
+      title.className = "tag-detail-title";
+      title.id = "tagDetailTitle";
+      title.textContent = "编辑标签";
+      const closeButton = document.createElement("button");
+      closeButton.className = "tag-detail-close";
+      closeButton.type = "button";
+      closeButton.textContent = "×";
+      closeButton.setAttribute("aria-label", "取消编辑标签");
+      closeButton.addEventListener("click", closeTagDetailEditor);
+      head.append(title, closeButton);
+
+      const fields = document.createElement("div");
+      fields.className = "tag-detail-fields";
+
+      const nameField = document.createElement("label");
+      nameField.className = "tag-detail-field";
+      const nameLabel = document.createElement("span");
+      nameLabel.className = "tag-detail-label";
+      nameLabel.textContent = "标签名称";
+      const nameInput = document.createElement("input");
+      nameInput.className = "tag-detail-input";
+      nameInput.type = "text";
+      nameInput.value = tagDetailDraft.name;
+      nameInput.autocomplete = "off";
+      nameInput.setAttribute("aria-label", "标签名称");
+      nameInput.addEventListener("input", () => {
+        tagDetailDraft.name = nameInput.value;
+        tagDetailDraft.error = "";
+      });
+      nameField.append(nameLabel, nameInput);
+
+      const triggerField = document.createElement("div");
+      triggerField.className = "tag-detail-field";
+      const triggerLabel = document.createElement("span");
+      triggerLabel.className = "tag-detail-label";
+      triggerLabel.textContent = "触发词";
+      const triggerList = document.createElement("div");
+      triggerList.className = "tag-trigger-list";
+
+      if (tagDetailDraft.triggers.length === 0) {
+        const empty = document.createElement("span");
+        empty.className = "tag-trigger-empty";
+        empty.textContent = "暂无触发词";
+        triggerList.append(empty);
+      } else {
+        tagDetailDraft.triggers.forEach((trigger, triggerIndex) => {
+          const chip = document.createElement("span");
+          chip.className = "tag-trigger-chip";
+          const text = document.createElement("span");
+          text.textContent = trigger;
+          const remove = document.createElement("button");
+          remove.className = "tag-trigger-remove";
+          remove.type = "button";
+          remove.textContent = "×";
+          remove.setAttribute("aria-label", `删除触发词「${trigger}」`);
+          remove.addEventListener("click", () => {
+            tagDetailDraft.triggers.splice(triggerIndex, 1);
+            tagDetailDraft.error = "";
+            renderSettingsPage();
+          });
+          chip.append(text, remove);
+          triggerList.append(chip);
+        });
+      }
+
+      const addLabel = document.createElement("span");
+      addLabel.className = "tag-detail-label";
+      addLabel.textContent = "新增触发词";
+      const addRow = document.createElement("div");
+      addRow.className = "tag-trigger-add-row";
+      const triggerInput = document.createElement("input");
+      triggerInput.className = "tag-detail-input";
+      triggerInput.type = "text";
+      triggerInput.placeholder = "输入触发词";
+      triggerInput.autocomplete = "off";
+      triggerInput.setAttribute("aria-label", "新增触发词");
+      const addButton = document.createElement("button");
+      addButton.className = "tag-trigger-add";
+      addButton.type = "button";
+      addButton.textContent = "添加";
+
+      function addTrigger() {
+        const trigger = triggerInput.value.trim();
+        if (!trigger) {
+          tagDetailDraft.error = "请输入触发词";
+          renderSettingsPage();
+          return;
+        }
+        if (tagDetailDraft.triggers.includes(trigger)) {
+          tagDetailDraft.error = "触发词已存在";
+          renderSettingsPage();
+          return;
+        }
+        tagDetailDraft.triggers.push(trigger);
+        tagDetailDraft.error = "";
+        renderSettingsPage();
+      }
+
+      triggerInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          addTrigger();
+        }
+      });
+      addButton.addEventListener("click", addTrigger);
+      addRow.append(triggerInput, addButton);
+      triggerField.append(triggerLabel, triggerList, addLabel, addRow);
+
+      const error = document.createElement("div");
+      error.className = "tag-detail-error";
+      error.setAttribute("role", "alert");
+      error.textContent = tagDetailDraft.error;
+
+      const actions = document.createElement("div");
+      actions.className = "panel-actions tag-detail-actions";
+      const saveButton = document.createElement("button");
+      saveButton.className = "panel-save";
+      saveButton.type = "button";
+      saveButton.textContent = "保存";
+      saveButton.addEventListener("click", saveTagDetailEditor);
+      const cancelButton = document.createElement("button");
+      cancelButton.className = "panel-cancel";
+      cancelButton.type = "button";
+      cancelButton.textContent = "取消";
+      cancelButton.addEventListener("click", closeTagDetailEditor);
+      actions.append(saveButton, cancelButton);
+
+      fields.append(nameField, triggerField, error, actions);
+      panel.append(head, fields);
+      overlay.append(panel);
+      return overlay;
     }
 
     function deleteTag(categoryIndex, tagIndex) {
@@ -4050,8 +4435,7 @@
         tagName.className = "config-tag-name";
         tagName.textContent = `#${tag.name}`;
         tagName.addEventListener("dblclick", () => {
-          editingTag = { categoryIndex, tagIndex };
-          renderSettingsPage();
+          openTagDetailEditor(categoryIndex, tagIndex);
         });
 
         const tagActions = document.createElement("div");
@@ -4079,9 +4463,7 @@
           editTagButton.type = "button";
           editTagButton.textContent = "编辑标签";
           editTagButton.addEventListener("click", () => {
-            editingTag = { categoryIndex, tagIndex };
-            openTagActionMenuKey = null;
-            renderSettingsPage();
+            openTagDetailEditor(categoryIndex, tagIndex);
           });
           const removeButton = document.createElement("button");
           removeButton.className = "is-danger";
@@ -4327,6 +4709,8 @@
       const dataSyncSection = createDataSyncSection();
 
       settingsView.replaceChildren(backButton, title, list, addArea, dataSyncSection);
+      const tagDetailPanel = createTagDetailPanel();
+      if (tagDetailPanel) settingsView.append(tagDetailPanel);
     }
 
     function render() {
@@ -5494,6 +5878,10 @@
 
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {
+        if (tagDetailDraft) {
+          tagDetailDraft = null;
+          renderSettingsPage();
+        }
         closeCtxMenu();
         closeBottomSheet();
         closeCalendarMenu();
