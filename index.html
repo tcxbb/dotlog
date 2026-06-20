@@ -492,13 +492,20 @@
     .entry-time-row {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 7px;
       margin-top: 10px;
     }
 
     .entry-time-label {
+      flex: 0 0 auto;
       color: var(--muted);
       font-size: 13px;
+    }
+
+    .time-range-arrow {
+      flex: 0 0 auto;
+      color: var(--muted);
+      font-size: 14px;
     }
 
     .entry-time-input {
@@ -881,6 +888,30 @@
       line-height: 1.4;
     }
 
+    .extend-to-now-button {
+      display: flex;
+      width: 28px;
+      height: 28px;
+      align-items: center;
+      justify-content: center;
+      margin-top: 2px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: transparent;
+      color: var(--muted);
+      padding: 0;
+      font-size: 15px;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .extend-to-now-button:hover,
+    .extend-to-now-button:focus-visible,
+    .extend-to-now-button:active {
+      border-color: var(--muted);
+      color: var(--text);
+    }
+
     .ctx-overlay {
       position: fixed;
       inset: 0;
@@ -1169,15 +1200,17 @@
     .edit-time-fields {
       display: grid;
       grid-template-columns: 63px minmax(0, 1fr);
-      gap: 8px 10px;
+      gap: 10px;
       align-items: center;
       width: 100%;
-    }
-
-    .edit-time-line {
-      display: contents;
       color: var(--muted);
       font-size: 14px;
+    }
+
+    .edit-time-range {
+      display: flex;
+      gap: 8px;
+      align-items: center;
     }
 
     .edit-time-input {
@@ -1185,6 +1218,81 @@
       min-width: 78px;
       text-align: center;
       cursor: pointer;
+    }
+
+    .edit-classification-section {
+      display: grid;
+      gap: 8px;
+    }
+
+    .edit-classification-summary {
+      display: flex;
+      width: fit-content;
+      max-width: 100%;
+      align-items: center;
+      gap: 9px;
+      border: 0;
+      background: transparent;
+      color: var(--text);
+      padding: 2px 0;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .edit-classification-label {
+      min-width: 36px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .edit-current-category {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 5px 11px;
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .edit-current-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .edit-current-tag {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 3px 8px;
+    }
+
+    .edit-classification-options {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      padding-left: 45px;
+    }
+
+    .edit-panel .edit-category-option,
+    .entry-classification .category-option {
+      padding: 6px 12px;
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .edit-panel .edit-tag-option,
+    .entry-classification .tag-option {
+      background: transparent;
+      color: var(--muted);
+      padding: 3px 8px;
+      font-size: 12px;
+      font-weight: 400;
+    }
+
+    .edit-panel .edit-tag-option.is-selected,
+    .entry-classification .tag-option.is-selected {
+      color: #FFFFFF;
     }
 
     .edit-panel .tag-picker {
@@ -1874,8 +1982,10 @@
           enterkeyhint="done"
         >
         <div class="entry-time-row">
-          <label class="entry-time-label" for="entryStartTime">开始时间</label>
+          <span class="entry-time-label">时间：</span>
           <input class="entry-time-input" id="entryStartTime" type="text" inputmode="none" readonly aria-label="事件开始时间">
+          <span class="time-range-arrow" aria-hidden="true">→</span>
+          <input class="entry-time-input" id="entryEndTime" type="text" inputmode="none" readonly aria-label="事件结束时间">
           <button class="entry-time-auto" id="entryStartAuto" type="button" aria-label="自动设置开始时间" title="自动设置开始时间">
             <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M4.2 7.2A6.3 6.3 0 1 1 3.8 12"/>
@@ -1883,10 +1993,6 @@
               <path d="M10 6.4v3.8l2.5 1.5"/>
             </svg>
           </button>
-        </div>
-        <div class="entry-time-row" id="entryEndTimeRow">
-          <label class="entry-time-label" for="entryEndTime">结束时间</label>
-          <input class="entry-time-input" id="entryEndTime" type="text" inputmode="none" readonly aria-label="事件结束时间">
         </div>
         <div class="split-hint is-hidden" id="splitHint">检测到加号 · 拆分格式：主事件 + 次事件 时长（分钟）</div>
         <div class="entry-classification" id="entryClassification"></div>
@@ -1993,6 +2099,8 @@
     let settingsMode = "main";
     let editingRecordIndex = null;
     let editDraft = null;
+    let editCategoryExpanded = false;
+    let editTagsExpanded = false;
     let timePickerTarget = null;
     let timePickerValue = "00:00";
     const timePickerScrollFrames = new WeakMap();
@@ -2779,6 +2887,23 @@
       markLocalDataChanged();
     }
 
+    function canExtendRecordToNow(record, index, date, now = new Date()) {
+      if (!record || index !== 0 || !isToday(date)) return false;
+      const difference = now.getHours() * 60 + now.getMinutes() - timeToMinutes(record.time);
+      return difference >= 3;
+    }
+
+    function extendRecordToNow(index) {
+      const records = loadRecords(viewedDate);
+      const record = records[index];
+      const now = new Date();
+      if (!canExtendRecordToNow(record, index, viewedDate, now)) return;
+
+      record.time = formatTime(now);
+      saveRecords(viewedDate, sortRecords(records));
+      render();
+    }
+
     function sortRecords(records) {
       return records
         .map((record, order) => ({ record, order }))
@@ -3142,6 +3267,8 @@
         isBackfill: record.isBackfill || false,
         isSplit: record.isSplit || false
       };
+      editCategoryExpanded = false;
+      editTagsExpanded = false;
       openCategoryIndexes = openCategoryIndexes.filter((itemIndex) => itemIndex !== index);
       openTagIndexes = openTagIndexes.filter((itemIndex) => itemIndex !== index);
       render();
@@ -3151,6 +3278,8 @@
       closeTimePicker();
       editingRecordIndex = null;
       editDraft = null;
+      editCategoryExpanded = false;
+      editTagsExpanded = false;
       render();
     }
 
@@ -3249,14 +3378,20 @@
       saveRecords(viewedDate, sortRecords(records));
       editingRecordIndex = null;
       editDraft = null;
+      editCategoryExpanded = false;
+      editTagsExpanded = false;
       render();
     }
 
-    function createChoiceButton(label, selected, color, onClick) {
+    function createEditChoiceButton(label, type, selected, color, onClick) {
       const button = document.createElement("button");
-      button.className = selected ? "tag-option is-selected" : "tag-option";
+      const baseClass = type === "category"
+        ? "category-option edit-category-option"
+        : "tag-option edit-tag-option";
+      button.className = selected ? `${baseClass} is-selected` : baseClass;
       button.type = "button";
-      button.textContent = label;
+      button.textContent = type === "tag" ? `#${label}` : label;
+      button.setAttribute("aria-pressed", String(selected));
 
       if (selected) {
         button.style.backgroundColor = color;
@@ -3271,29 +3406,21 @@
       const panel = document.createElement("div");
       panel.className = "edit-panel";
 
-      const startTimeLine = document.createElement("label");
-      startTimeLine.className = "edit-time-line";
-      const startTimeLabel = document.createElement("span");
-      startTimeLabel.textContent = "开始：";
       const startTimeInput = document.createElement("input");
       startTimeInput.className = "edit-input edit-time-input";
       startTimeInput.type = "text";
       startTimeInput.inputMode = "none";
       startTimeInput.readOnly = true;
       startTimeInput.value = editDraft.startTime;
-      startTimeLine.append(startTimeLabel, startTimeInput);
+      startTimeInput.setAttribute("aria-label", "记录开始时间");
 
-      const timeLine = document.createElement("label");
-      timeLine.className = "edit-time-line";
-      const timeLabel = document.createElement("span");
-      timeLabel.textContent = "结束：";
       const timeInput = document.createElement("input");
       timeInput.className = "edit-input edit-time-input";
       timeInput.type = "text";
       timeInput.inputMode = "none";
       timeInput.readOnly = true;
       timeInput.value = editDraft.time;
-      timeLine.append(timeLabel, timeInput);
+      timeInput.setAttribute("aria-label", "记录结束时间");
 
       const textLine = document.createElement("label");
       textLine.className = "form-line";
@@ -3319,44 +3446,93 @@
       error.className = "field-error is-hidden";
       error.textContent = "请输入正确时间格式 HH:MM";
 
-      const categoryRow = document.createElement("div");
-      categoryRow.className = "tag-picker";
-      const categoryPrompt = document.createElement("div");
-      categoryPrompt.className = "tag-prompt";
-      categoryPrompt.textContent = "分类：";
-      categoryRow.append(categoryPrompt);
-
-      getCategories().forEach((category) => {
-        const selected = editDraft.category === category.name;
-        categoryRow.append(createChoiceButton(category.name, selected, category.color, () => {
-          editDraft.category = selected ? null : category.name;
-          editDraft.tags = [];
-          render();
-        }));
-      });
-
-      const tagRow = document.createElement("div");
-      tagRow.className = "tag-picker";
-      const tagPrompt = document.createElement("div");
-      tagPrompt.className = "tag-prompt";
-      tagPrompt.textContent = "标签：";
-      tagRow.append(tagPrompt);
-
+      const categorySection = document.createElement("div");
+      categorySection.className = "edit-classification-section";
+      const categorySummary = document.createElement("button");
+      categorySummary.className = "edit-classification-summary";
+      categorySummary.type = "button";
+      categorySummary.setAttribute("aria-expanded", String(editCategoryExpanded));
+      const categoryLabel = document.createElement("span");
+      categoryLabel.className = "edit-classification-label";
+      categoryLabel.textContent = "分类";
+      const currentCategory = document.createElement("span");
+      currentCategory.className = "edit-current-category";
+      currentCategory.textContent = editDraft.category || "未选择";
       if (editDraft.category) {
-        getCategoryTags(editDraft.category).forEach((tag) => {
-          const selected = editDraft.tags.includes(tag);
-          tagRow.append(createChoiceButton(tag, selected, categoryColor(editDraft.category), () => {
-            editDraft.tags = selected
-              ? editDraft.tags.filter((item) => item !== tag)
-              : [...editDraft.tags, tag];
+        const color = categoryColor(editDraft.category);
+        currentCategory.style.borderColor = color;
+        currentCategory.style.color = color;
+      }
+      categorySummary.append(categoryLabel, currentCategory);
+      categorySummary.addEventListener("click", () => {
+        editCategoryExpanded = !editCategoryExpanded;
+        render();
+      });
+      categorySection.append(categorySummary);
+
+      if (editCategoryExpanded) {
+        const categoryOptions = document.createElement("div");
+        categoryOptions.className = "edit-classification-options";
+        getCategories().forEach((category) => {
+          const selected = editDraft.category === category.name;
+          categoryOptions.append(createEditChoiceButton(category.name, "category", selected, category.color, () => {
+            editDraft.category = selected ? null : category.name;
+            editDraft.tags = [];
+            editCategoryExpanded = false;
             render();
           }));
         });
+        categorySection.append(categoryOptions);
+      }
+
+      const tagSection = document.createElement("div");
+      tagSection.className = "edit-classification-section";
+      const tagSummary = document.createElement("button");
+      tagSummary.className = "edit-classification-summary";
+      tagSummary.type = "button";
+      tagSummary.setAttribute("aria-expanded", String(editTagsExpanded));
+      const tagLabel = document.createElement("span");
+      tagLabel.className = "edit-classification-label";
+      tagLabel.textContent = "标签";
+      const currentTags = document.createElement("span");
+      currentTags.className = "edit-current-tags";
+      if (editDraft.tags.length > 0) {
+        editDraft.tags.forEach((tag) => {
+          const badge = document.createElement("span");
+          badge.className = "edit-current-tag";
+          badge.textContent = `#${tag}`;
+          currentTags.append(badge);
+        });
       } else {
-        const empty = document.createElement("span");
-        empty.className = "empty-category";
-        empty.textContent = "先选择分类";
-        tagRow.append(empty);
+        currentTags.textContent = "未选择";
+      }
+      tagSummary.append(tagLabel, currentTags);
+      tagSummary.addEventListener("click", () => {
+        editTagsExpanded = !editTagsExpanded;
+        render();
+      });
+      tagSection.append(tagSummary);
+
+      if (editTagsExpanded) {
+        const tagOptions = document.createElement("div");
+        tagOptions.className = "edit-classification-options";
+        if (editDraft.category) {
+          getCategoryTags(editDraft.category).forEach((tag) => {
+            const selected = editDraft.tags.includes(tag);
+            tagOptions.append(createEditChoiceButton(tag, "tag", selected, categoryColor(editDraft.category), () => {
+              editDraft.tags = selected
+                ? editDraft.tags.filter((item) => item !== tag)
+                : [...editDraft.tags, tag];
+              render();
+            }));
+          });
+        } else {
+          const empty = document.createElement("span");
+          empty.className = "empty-category";
+          empty.textContent = "先选择分类";
+          tagOptions.append(empty);
+        }
+        tagSection.append(tagOptions);
       }
 
       const actions = document.createElement("div");
@@ -3402,9 +3578,18 @@
 
       const timeFields = document.createElement("div");
       timeFields.className = "edit-time-fields";
-      timeFields.append(startTimeLine, timeLine);
+      const timeLabel = document.createElement("span");
+      timeLabel.textContent = "时间：";
+      const timeRange = document.createElement("div");
+      timeRange.className = "edit-time-range";
+      const timeArrow = document.createElement("span");
+      timeArrow.className = "time-range-arrow";
+      timeArrow.setAttribute("aria-hidden", "true");
+      timeArrow.textContent = "→";
+      timeRange.append(startTimeInput, timeArrow, timeInput);
+      timeFields.append(timeLabel, timeRange);
       actions.append(saveButton, cancelButton);
-      panel.append(actions, timeFields, textLine, noteLine, error, categoryRow, tagRow);
+      panel.append(actions, timeFields, textLine, noteLine, error, categorySection, tagSection);
       validateEditPanel();
 
       setTimeout(() => textInput.focus(), 0);
@@ -4046,6 +4231,20 @@
 
         time.append(startTime);
 
+        if (editingRecordIndex !== index && canExtendRecordToNow(record, index, viewedDate)) {
+          const extendButton = document.createElement("button");
+          extendButton.className = "extend-to-now-button";
+          extendButton.type = "button";
+          extendButton.textContent = "⤴";
+          extendButton.setAttribute("aria-label", "延长到现在");
+          extendButton.title = "延长到现在";
+          extendButton.addEventListener("click", (event) => {
+            event.stopPropagation();
+            extendRecordToNow(index);
+          });
+          time.append(extendButton);
+        }
+
         if (isCategoryOpen(index)) {
           body.append(createCategoryPicker(record, index));
         }
@@ -4585,7 +4784,7 @@
           const button = document.createElement("button");
           button.className = "tag-option";
           button.type = "button";
-          button.textContent = tag;
+          button.textContent = `#${tag}`;
           button.setAttribute("aria-pressed", String(entryClassificationDraft.tags.includes(tag)));
 
           if (entryClassificationDraft.tags.includes(tag)) {
