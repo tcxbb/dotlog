@@ -502,7 +502,9 @@
     }
 
     .entry-time-input {
-      min-width: 112px;
+      width: 82px;
+      min-width: 0;
+      flex: 0 0 82px;
       border: 1px solid var(--border);
       border-radius: 8px;
       background: var(--bg);
@@ -514,12 +516,28 @@
     }
 
     .entry-time-auto {
-      border: 0;
+      display: inline-grid;
+      width: 28px;
+      height: 28px;
+      place-items: center;
+      border: 1px solid transparent;
+      border-radius: 7px;
       background: transparent;
       color: var(--muted);
-      padding: 6px 4px;
-      font-size: 13px;
+      padding: 0;
       cursor: pointer;
+    }
+
+    .entry-time-auto:hover,
+    .entry-time-auto:focus-visible {
+      border-color: var(--border);
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .entry-time-auto svg {
+      width: 16px;
+      height: 16px;
     }
 
     .entry-classification {
@@ -581,6 +599,13 @@
 
     .edit-input:focus {
       border-color: var(--accent);
+    }
+
+    .compact-time-input {
+      width: 82px;
+      min-width: 82px;
+      text-align: center;
+      cursor: pointer;
     }
 
     .edit-input.is-invalid {
@@ -1129,7 +1154,8 @@
 
     .edit-panel {
       display: grid;
-      gap: 12px;
+      position: relative;
+      gap: 10px;
       margin: 4px 0 8px;
       padding: 14px;
       width: 100%;
@@ -1141,7 +1167,29 @@
       width: 100%;
     }
 
+    .edit-panel-actions {
+      justify-self: end;
+      margin-bottom: -2px;
+    }
+
+    .edit-time-fields {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 16px;
+      align-items: center;
+    }
+
+    .edit-time-line {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
     .edit-time-input {
+      width: 78px;
+      min-width: 78px;
       text-align: center;
       cursor: pointer;
     }
@@ -1835,7 +1883,13 @@
         <div class="entry-time-row">
           <label class="entry-time-label" for="entryStartTime">开始时间</label>
           <input class="entry-time-input" id="entryStartTime" type="text" inputmode="none" readonly aria-label="事件开始时间">
-          <button class="entry-time-auto" id="entryStartAuto" type="button">自动</button>
+          <button class="entry-time-auto" id="entryStartAuto" type="button" aria-label="自动设置开始时间" title="自动设置开始时间">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4.2 7.2A6.3 6.3 0 1 1 3.8 12"/>
+              <path d="M4.2 3.8v3.4h3.4"/>
+              <path d="M10 6.4v3.8l2.5 1.5"/>
+            </svg>
+          </button>
         </div>
         <div class="entry-time-row" id="entryEndTimeRow">
           <label class="entry-time-label" for="entryEndTime">结束时间</label>
@@ -1866,9 +1920,9 @@
         </label>
         <label class="form-line">
           <span>结束时间：</span>
-          <input class="edit-input" id="backfillTime" type="text" inputmode="numeric" placeholder="HH:MM">
+          <input class="edit-input compact-time-input" id="backfillTime" type="text" inputmode="none" readonly aria-label="补录结束时间">
         </label>
-        <div class="field-error is-hidden" id="backfillError">请输入正确时间格式 HH:MM</div>
+        <div class="field-error is-hidden" id="backfillError">请选择正确的结束时间</div>
         <div class="panel-actions">
           <button class="panel-save" id="confirmBackfill" type="button">确认补录</button>
           <button class="panel-cancel" id="cancelBackfill" type="button">取消</button>
@@ -3231,7 +3285,7 @@
       panel.className = "edit-panel";
 
       const startTimeLine = document.createElement("label");
-      startTimeLine.className = "form-line";
+      startTimeLine.className = "edit-time-line";
       const startTimeLabel = document.createElement("span");
       startTimeLabel.textContent = "开始：";
       const startTimeInput = document.createElement("input");
@@ -3243,7 +3297,7 @@
       startTimeLine.append(startTimeLabel, startTimeInput);
 
       const timeLine = document.createElement("label");
-      timeLine.className = "form-line";
+      timeLine.className = "edit-time-line";
       const timeLabel = document.createElement("span");
       timeLabel.textContent = "结束：";
       const timeInput = document.createElement("input");
@@ -3319,7 +3373,7 @@
       }
 
       const actions = document.createElement("div");
-      actions.className = "panel-actions";
+      actions.className = "panel-actions edit-panel-actions";
       const saveButton = document.createElement("button");
       saveButton.className = "panel-save";
       saveButton.type = "button";
@@ -3359,8 +3413,11 @@
       saveButton.addEventListener("click", () => saveEditedRecord(index));
       cancelButton.addEventListener("click", cancelEditingRecord);
 
+      const timeFields = document.createElement("div");
+      timeFields.className = "edit-time-fields";
+      timeFields.append(startTimeLine, timeLine);
       actions.append(saveButton, cancelButton);
-      panel.append(startTimeLine, timeLine, textLine, noteLine, error, categoryRow, tagRow, actions);
+      panel.append(actions, timeFields, textLine, noteLine, error, categoryRow, tagRow);
       validateEditPanel();
 
       setTimeout(() => textInput.focus(), 0);
@@ -4696,11 +4753,11 @@
       entryEndTimeRow.classList.toggle("is-hidden", open);
       if (open) {
         setDateSelectors(backfillYear, backfillMonth, backfillDay, today);
+        backfillTime.value = formatTime(new Date());
         entryStartTimeTouched = false;
         refreshEntryStartTime(true);
         backfillError.classList.add("is-hidden");
         backfillTime.classList.remove("is-invalid");
-        setTimeout(() => backfillTime.focus(), 0);
       } else if (!bottomSheet.classList.contains("is-hidden")) {
         entryStartTimeTouched = false;
         refreshEntryStartTime(true);
@@ -4716,7 +4773,7 @@
       const valid = isValidTimeInput(backfillTime.value.trim());
       backfillTime.classList.toggle("is-invalid", !valid);
       if (!valid) {
-        setBackfillError("请输入正确时间格式 HH:MM");
+        setBackfillError("请选择正确的结束时间");
       } else {
         backfillError.classList.add("is-hidden");
       }
@@ -4973,6 +5030,8 @@
       if (!backfillError.classList.contains("is-hidden")) validateBackfillPanel();
       refreshEntryStartTime();
     });
+
+    backfillTime.addEventListener("click", () => openTimePicker(backfillTime, "选择补录结束时间"));
 
     backfillYear.addEventListener("change", () => {
       refreshDaySelector(backfillYear, backfillMonth, backfillDay);
