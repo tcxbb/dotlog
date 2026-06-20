@@ -1,4 +1,4 @@
-const CACHE_NAME = "dotlog-v0.7.10-compact-time-controls";
+const CACHE_NAME = "dotlog-v0.7.10-aligned-time-panels";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (event) => {

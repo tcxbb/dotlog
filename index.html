@@ -517,21 +517,21 @@
 
     .entry-time-auto {
       display: inline-grid;
-      width: 28px;
-      height: 28px;
+      width: 34px;
+      align-self: stretch;
       place-items: center;
-      border: 1px solid transparent;
-      border-radius: 7px;
-      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg);
       color: var(--muted);
       padding: 0;
       cursor: pointer;
     }
 
     .entry-time-auto:hover,
-    .entry-time-auto:focus-visible {
-      border-color: var(--border);
-      background: var(--bg);
+    .entry-time-auto:focus-visible,
+    .entry-time-auto:active {
+      border-color: var(--muted);
       color: var(--text);
     }
 
@@ -599,13 +599,6 @@
 
     .edit-input:focus {
       border-color: var(--accent);
-    }
-
-    .compact-time-input {
-      width: 82px;
-      min-width: 82px;
-      text-align: center;
-      cursor: pointer;
     }
 
     .edit-input.is-invalid {
@@ -1163,26 +1156,26 @@
     }
 
     .edit-panel .form-line {
-      grid-template-columns: 58px minmax(0, 1fr);
+      grid-template-columns: 63px minmax(0, 1fr);
+      gap: 10px;
       width: 100%;
     }
 
     .edit-panel-actions {
-      justify-self: end;
+      justify-self: start;
       margin-bottom: -2px;
     }
 
     .edit-time-fields {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px 16px;
+      display: grid;
+      grid-template-columns: 63px minmax(0, 1fr);
+      gap: 8px 10px;
       align-items: center;
+      width: 100%;
     }
 
     .edit-time-line {
-      display: flex;
-      gap: 6px;
-      align-items: center;
+      display: contents;
       color: var(--muted);
       font-size: 14px;
     }
@@ -1918,10 +1911,6 @@
             <span>日</span>
           </span>
         </label>
-        <label class="form-line">
-          <span>结束时间：</span>
-          <input class="edit-input compact-time-input" id="backfillTime" type="text" inputmode="none" readonly aria-label="补录结束时间">
-        </label>
         <div class="field-error is-hidden" id="backfillError">请选择正确的结束时间</div>
         <div class="panel-actions">
           <button class="panel-save" id="confirmBackfill" type="button">确认补录</button>
@@ -1937,7 +1926,6 @@
     const entryInput = document.querySelector("#entryInput");
     const entryStartTime = document.querySelector("#entryStartTime");
     const entryStartAuto = document.querySelector("#entryStartAuto");
-    const entryEndTimeRow = document.querySelector("#entryEndTimeRow");
     const entryEndTime = document.querySelector("#entryEndTime");
     const entryClassification = document.querySelector("#entryClassification");
     const insertPlusBtn = document.querySelector("#insertPlus");
@@ -1946,7 +1934,6 @@
     const backfillYear = document.querySelector("#backfillYear");
     const backfillMonth = document.querySelector("#backfillMonth");
     const backfillDay = document.querySelector("#backfillDay");
-    const backfillTime = document.querySelector("#backfillTime");
     const backfillError = document.querySelector("#backfillError");
     const confirmBackfill = document.querySelector("#confirmBackfill");
     const cancelBackfill = document.querySelector("#cancelBackfill");
@@ -4640,7 +4627,7 @@
       if (!backfillPanel.classList.contains("is-hidden")) {
         return {
           date: dateFromSelectors(backfillYear, backfillMonth, backfillDay),
-          endTime: isValidTimeInput(backfillTime.value.trim()) ? backfillTime.value.trim() : formatTime(new Date())
+          endTime: isValidTimeInput(entryEndTime.value) ? entryEndTime.value : formatTime(new Date())
         };
       }
 
@@ -4750,14 +4737,12 @@
 
     function toggleBackfillPanel(open) {
       backfillPanel.classList.toggle("is-hidden", !open);
-      entryEndTimeRow.classList.toggle("is-hidden", open);
       if (open) {
         setDateSelectors(backfillYear, backfillMonth, backfillDay, today);
-        backfillTime.value = formatTime(new Date());
+        resetEntryEndTime();
         entryStartTimeTouched = false;
         refreshEntryStartTime(true);
         backfillError.classList.add("is-hidden");
-        backfillTime.classList.remove("is-invalid");
       } else if (!bottomSheet.classList.contains("is-hidden")) {
         entryStartTimeTouched = false;
         refreshEntryStartTime(true);
@@ -4770,8 +4755,8 @@
     }
 
     function validateBackfillPanel() {
-      const valid = isValidTimeInput(backfillTime.value.trim());
-      backfillTime.classList.toggle("is-invalid", !valid);
+      const valid = isValidTimeInput(entryEndTime.value);
+      entryEndTime.classList.toggle("is-invalid", !valid);
       if (!valid) {
         setBackfillError("请选择正确的结束时间");
       } else {
@@ -4781,12 +4766,12 @@
     }
 
     function submitBackfillPanel() {
-      const time = backfillTime.value.trim();
+      const time = entryEndTime.value;
       const rawText = entryInput.value.trim();
       const targetDate = dateFromSelectors(backfillYear, backfillMonth, backfillDay);
 
       if (!validateBackfillPanel()) {
-        backfillTime.focus();
+        entryEndTime.focus();
         return;
       }
 
@@ -4812,7 +4797,6 @@
       };
 
       insertNewRecords(targetDate, [newRecord]);
-      backfillTime.value = "";
       entryInput.value = "";
       updateSplitHint();
       resetEntryClassification();
@@ -5026,13 +5010,6 @@
       toggleBackfillPanel(backfillPanel.classList.contains("is-hidden"));
     });
 
-    backfillTime.addEventListener("input", () => {
-      if (!backfillError.classList.contains("is-hidden")) validateBackfillPanel();
-      refreshEntryStartTime();
-    });
-
-    backfillTime.addEventListener("click", () => openTimePicker(backfillTime, "选择补录结束时间"));
-
     backfillYear.addEventListener("change", () => {
       refreshDaySelector(backfillYear, backfillMonth, backfillDay);
       refreshEntryStartTime();
@@ -5043,17 +5020,9 @@
     });
     backfillDay.addEventListener("change", () => refreshEntryStartTime());
 
-    backfillTime.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") {
-        event.preventDefault();
-        submitBackfillPanel();
-      }
-    });
-
     confirmBackfill.addEventListener("click", submitBackfillPanel);
 
     cancelBackfill.addEventListener("click", () => {
-      backfillTime.value = "";
       toggleBackfillPanel(false);
     });
 
