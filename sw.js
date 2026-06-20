@@ -1,4 +1,4 @@
-const CACHE_NAME = "dotlog-v0.7.10-compact-sticky-header";
+const CACHE_NAME = "dotlog-v1.2.1-tag-trigger-data";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (event) => {

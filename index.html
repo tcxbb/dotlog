@@ -2278,16 +2278,37 @@
       return JSON.parse(JSON.stringify(defaultCategoryConfig));
     }
 
-    function normalizeCategoryConfig(config) {
-      if (!config || !Array.isArray(config.categories)) return cloneDefaultCategoryConfig();
+    function normalizeTagConfig(tag) {
+      if (typeof tag === "string") {
+        return { name: tag, triggers: [] };
+      }
+
+      if (!tag || typeof tag !== "object" || !tag.name) return null;
+
+      const triggers = Array.isArray(tag.triggers)
+        ? tag.triggers
+        : (Array.isArray(tag.keywords) ? tag.keywords : []);
 
       return {
-        categories: config.categories
+        name: String(tag.name),
+        triggers: [...new Set(triggers.map((trigger) => String(trigger).trim()).filter(Boolean))]
+      };
+    }
+
+    function normalizeCategoryConfig(config) {
+      const source = config && Array.isArray(config.categories)
+        ? config
+        : cloneDefaultCategoryConfig();
+
+      return {
+        categories: source.categories
           .filter((category) => category && category.name && category.color)
           .map((category) => ({
             name: String(category.name),
             color: String(category.color),
-            tags: Array.isArray(category.tags) ? category.tags.map(String) : []
+            tags: Array.isArray(category.tags)
+              ? category.tags.map(normalizeTagConfig).filter(Boolean)
+              : []
           }))
       };
     }
@@ -2295,7 +2316,7 @@
     function loadCategoryConfig() {
       const storedConfig = localStorage.getItem("category_config");
       if (!storedConfig) {
-        const defaultConfig = cloneDefaultCategoryConfig();
+        const defaultConfig = normalizeCategoryConfig(cloneDefaultCategoryConfig());
         saveCategoryConfig(defaultConfig);
         return defaultConfig;
       }
@@ -2324,7 +2345,7 @@
 
     function getCategoryTags(categoryName) {
       const category = findCategory(categoryName);
-      return category ? category.tags : [];
+      return category ? category.tags.map((tag) => tag.name) : [];
     }
 
     function categoryColor(categoryName) {
@@ -3682,12 +3703,12 @@
       const category = config.categories[categoryIndex];
       if (!category) return;
 
-      if (category.tags.includes(tagName)) {
+      if (category.tags.some((tag) => tag.name === tagName)) {
         alert("标签已存在");
         return;
       }
 
-      category.tags.push(tagName);
+      category.tags.push({ name: tagName, triggers: [] });
       saveCategoryConfig(config);
       addingTagCategoryIndex = null;
       renderSettingsPage();
@@ -3704,13 +3725,13 @@
       const category = config.categories[categoryIndex];
       if (!category) return;
 
-      if (category.tags.some((tag, index) => index !== tagIndex && tag === tagName)) {
+      if (category.tags.some((tag, index) => index !== tagIndex && tag.name === tagName)) {
         alert("标签已存在");
         input.value = originalName;
         return;
       }
 
-      category.tags[tagIndex] = tagName;
+      category.tags[tagIndex].name = tagName;
       saveCategoryConfig(config);
       editingTag = null;
       renderSettingsPage();
@@ -3722,7 +3743,7 @@
       if (!category) return;
 
       const tag = category.tags[tagIndex];
-      if (tag === undefined || !confirm(`确认删除标签「${tag}」？`)) return;
+      if (tag === undefined || !confirm(`确认删除标签「${tag.name}」？`)) return;
 
       category.tags.splice(tagIndex, 1);
       saveCategoryConfig(config);
@@ -3825,8 +3846,8 @@
       category.tags.forEach((tag, tagIndex) => {
         if (editingTag && editingTag.categoryIndex === categoryIndex && editingTag.tagIndex === tagIndex) {
           tags.append(createInlineInput(
-            tag,
-            (input) => updateTagName(categoryIndex, tagIndex, input, tag),
+            tag.name,
+            (input) => updateTagName(categoryIndex, tagIndex, input, tag.name),
             () => {
               editingTag = null;
               renderSettingsPage();
@@ -3840,7 +3861,7 @@
 
         const tagName = document.createElement("span");
         tagName.className = "config-tag-name";
-        tagName.textContent = `#${tag}`;
+        tagName.textContent = `#${tag.name}`;
         tagName.addEventListener("dblclick", () => {
           editingTag = { categoryIndex, tagIndex };
           renderSettingsPage();
