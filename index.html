@@ -2579,6 +2579,7 @@
     let currentWeekStart = getWeekStart(viewedDate);
     let weekSwipeStartX = 0;
     let weekSwipeStartY = 0;
+    let weekSwipeCurrentX = 0;
     let weekSwipeAxis = null;
     let weekSwipeAnimating = false;
     let weekSwipeSuppressClick = false;
@@ -3497,6 +3498,7 @@
     }
 
     function resetWeekSwipePosition(animate = true) {
+      weekSwipeCurrentX = 0;
       weekDays.classList.remove("is-dragging");
       weekDays.style.transition = animate
         ? "transform 0.32s cubic-bezier(0.22, 0.72, 0.2, 1), opacity 0.26s ease"
@@ -3509,25 +3511,36 @@
       if (weekSwipeAnimating) return;
       weekSwipeAnimating = true;
       const width = Math.max(weekNav.clientWidth, 1);
+      const startX = Math.max(-width, Math.min(width, weekSwipeCurrentX));
+      const targetX = exitDirection * width;
+      const remainingRatio = Math.min(1, Math.abs(targetX - startX) / width);
+      const duration = Math.max(120, Math.round(300 * remainingRatio));
 
       weekDays.classList.remove("is-dragging");
-      weekDays.style.transition = "transform 0.3s cubic-bezier(0.22, 0.72, 0.2, 1)";
-      weekDays.style.transform = `translate3d(${exitDirection * width}px, 0, 0)`;
+      weekDays.style.transition = "none";
+      weekDays.style.transform = `translate3d(${startX}px, 0, 0)`;
       weekDays.style.opacity = "1";
 
-      setTimeout(() => {
-        viewedDate = offsetDate(viewedDate, dayOffset);
-        currentWeekStart = getWeekStart(viewedDate);
-        resetDateViewState();
-        weekDays.style.transition = "none";
-        weekDays.style.transform = "translate3d(0, 0, 0)";
-        weekDays.style.opacity = "1";
-        render();
-        weekSwipeAnimating = false;
-        weekDays.style.removeProperty("transition");
-        weekDays.style.removeProperty("transform");
-        weekDays.style.removeProperty("opacity");
-      }, 310);
+      requestAnimationFrame(() => {
+        weekDays.style.transition = `transform ${duration}ms cubic-bezier(0.22, 0.72, 0.2, 1)`;
+        weekDays.style.transform = `translate3d(${targetX}px, 0, 0)`;
+        weekSwipeCurrentX = targetX;
+
+        setTimeout(() => {
+          viewedDate = offsetDate(viewedDate, dayOffset);
+          currentWeekStart = getWeekStart(viewedDate);
+          resetDateViewState();
+          weekSwipeCurrentX = 0;
+          weekDays.style.transition = "none";
+          weekDays.style.transform = "translate3d(0, 0, 0)";
+          weekDays.style.opacity = "1";
+          render();
+          weekSwipeAnimating = false;
+          weekDays.style.removeProperty("transition");
+          weekDays.style.removeProperty("transform");
+          weekDays.style.removeProperty("opacity");
+        }, duration + 20);
+      });
     }
 
     function goToPrevWeek() {
@@ -6343,6 +6356,7 @@
       if (weekSwipeAnimating) return;
       weekSwipeStartX = event.touches[0].clientX;
       weekSwipeStartY = event.touches[0].clientY;
+      weekSwipeCurrentX = 0;
       weekSwipeAxis = null;
       weekSwipeSuppressClick = false;
     }, { passive: true });
@@ -6365,6 +6379,7 @@
       weekDays.classList.add("is-dragging");
       weekDays.style.transform = `translate3d(${displayX}px, 0, 0)`;
       weekDays.style.opacity = "1";
+      weekSwipeCurrentX = displayX;
     }, { passive: true });
 
     weekNav.addEventListener("touchend", (event) => {
