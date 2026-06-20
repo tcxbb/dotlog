@@ -1582,7 +1582,7 @@
       padding-bottom: 14px;
       border-bottom: 1px solid var(--border);
       font-size: 20px;
-      font-weight: 600;
+      font-weight: 650;
     }
 
     .category-config-list {
@@ -1694,6 +1694,10 @@
       color: var(--text);
     }
 
+    .config-category-toggle[aria-expanded="true"] {
+      transform: translateY(-1px);
+    }
+
     .color-swatch-btn {
       width: 14px;
       height: 14px;
@@ -1745,6 +1749,7 @@
       display: flex;
       align-items: center;
       gap: 2px;
+      margin-right: 7px;
       white-space: nowrap;
     }
 
@@ -1847,9 +1852,26 @@
       display: grid;
       gap: 2px;
       padding: 5px;
-      border: 1px solid var(--border);
-      border-radius: 9px;
+      border: 1px solid rgba(224, 221, 216, 0.52);
+      border-radius: 12px;
       background: #FFFFFF;
+    }
+
+    #settingsView > .category-config-list + div {
+      display: flex;
+      margin-top: 24px;
+    }
+
+    #settingsView > .category-config-list + div > .outline-button {
+      width: auto;
+      border-color: rgba(96, 96, 96, 0.52);
+      border-radius: 9px;
+      padding: 8px 14px;
+    }
+
+    #settingsView > .category-config-list + div > .add-category-panel {
+      width: min(100%, 360px);
+      margin-top: 0;
     }
 
     .config-tag {
@@ -4769,7 +4791,7 @@
 
       const title = document.createElement("h2");
       title.className = "settings-title";
-      title.textContent = "分类与标签管理";
+      title.textContent = "分类和标签";
 
       const list = document.createElement("div");
       list.className = "category-config-list";

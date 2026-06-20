@@ -1,4 +1,4 @@
-const CACHE_NAME = "dotlog-v1.2.7-white-header-refresh";
+const CACHE_NAME = "dotlog-v1.2.8-settings-visual-polish";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (event) => {
