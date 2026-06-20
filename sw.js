@@ -1,4 +1,4 @@
-const CACHE_NAME = "dotlog-v0.7.10-compact-time-picker-edit-overlay";
+const CACHE_NAME = "dotlog-v0.7.10-entry-end-time-smooth-picker";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (event) => {

@@ -1837,6 +1837,10 @@
           <input class="entry-time-input" id="entryStartTime" type="text" inputmode="none" readonly aria-label="事件开始时间">
           <button class="entry-time-auto" id="entryStartAuto" type="button">自动</button>
         </div>
+        <div class="entry-time-row" id="entryEndTimeRow">
+          <label class="entry-time-label" for="entryEndTime">结束时间</label>
+          <input class="entry-time-input" id="entryEndTime" type="text" inputmode="none" readonly aria-label="事件结束时间">
+        </div>
         <div class="split-hint is-hidden" id="splitHint">检测到加号 · 拆分格式：主事件 + 次事件 时长（分钟）</div>
         <div class="entry-classification" id="entryClassification"></div>
         <div class="sheet-actions">
@@ -1879,6 +1883,8 @@
     const entryInput = document.querySelector("#entryInput");
     const entryStartTime = document.querySelector("#entryStartTime");
     const entryStartAuto = document.querySelector("#entryStartAuto");
+    const entryEndTimeRow = document.querySelector("#entryEndTimeRow");
+    const entryEndTime = document.querySelector("#entryEndTime");
     const entryClassification = document.querySelector("#entryClassification");
     const insertPlusBtn = document.querySelector("#insertPlus");
     const backfillToggle = document.querySelector("#backfillToggle");
@@ -1948,7 +1954,7 @@
     let editDraft = null;
     let timePickerTarget = null;
     let timePickerValue = "00:00";
-    let timePickerScrollTimer = null;
+    const timePickerScrollFrames = new WeakMap();
     let editingCategoryIndex = null;
     let addingTagCategoryIndex = null;
     let editingTag = null;
@@ -3134,10 +3140,12 @@
     }
 
     function settleTimePickerColumn(column) {
-      clearTimeout(timePickerScrollTimer);
-      timePickerScrollTimer = setTimeout(() => {
+      const pendingFrame = timePickerScrollFrames.get(column);
+      if (pendingFrame) cancelAnimationFrame(pendingFrame);
+      timePickerScrollFrames.set(column, requestAnimationFrame(() => {
         selectTimePickerValue(column, Math.round(column.scrollTop / 36));
-      }, 80);
+        timePickerScrollFrames.delete(column);
+      }));
     }
 
     function openTimePicker(target, title = "选择时间") {
@@ -3164,6 +3172,8 @@
 
     function confirmTimePicker() {
       if (!timePickerTarget) return;
+      selectTimePickerValue(timePickerHour, Math.round(timePickerHour.scrollTop / 36));
+      selectTimePickerValue(timePickerMinute, Math.round(timePickerMinute.scrollTop / 36));
       const target = timePickerTarget;
       target.value = timePickerValue;
       closeTimePicker();
@@ -4577,7 +4587,14 @@
         };
       }
 
-      return { date: today, endTime: formatTime(new Date()) };
+      return {
+        date: today,
+        endTime: isValidTimeInput(entryEndTime.value) ? entryEndTime.value : formatTime(new Date())
+      };
+    }
+
+    function resetEntryEndTime() {
+      entryEndTime.value = formatTime(new Date());
     }
 
     function refreshEntryStartTime(force = false) {
@@ -4647,7 +4664,8 @@
       sheetOverlay.classList.remove("is-hidden");
       fab.classList.add("is-hidden");
       renderEntryClassification();
-      refreshEntryStartTime();
+      resetEntryEndTime();
+      refreshEntryStartTime(true);
       requestAnimationFrame(() => {
         bottomSheet.classList.add("is-open");
         updateBottomSheetViewport();
@@ -4675,6 +4693,7 @@
 
     function toggleBackfillPanel(open) {
       backfillPanel.classList.toggle("is-hidden", !open);
+      entryEndTimeRow.classList.toggle("is-hidden", open);
       if (open) {
         setDateSelectors(backfillYear, backfillMonth, backfillDay, today);
         entryStartTimeTouched = false;
@@ -4771,6 +4790,7 @@
         return;
       }
 
+      if (!backfill.isBackfill) backfill.time = activeEntryTiming().endTime;
       const split = parseSplit(backfill.text, backfill.time);
       if (!split) {
         return;
@@ -4828,6 +4848,7 @@
       updateSplitHint();
       resetEntryClassification();
       resetEntryStartTime();
+      resetEntryEndTime();
       render();
       closeBottomSheet();
     });
@@ -4908,6 +4929,9 @@
     });
 
     entryStartTime.addEventListener("click", () => openTimePicker(entryStartTime, "选择开始时间"));
+
+    entryEndTime.addEventListener("input", () => refreshEntryStartTime());
+    entryEndTime.addEventListener("click", () => openTimePicker(entryEndTime, "选择结束时间"));
 
     timePickerHour.addEventListener("scroll", () => settleTimePickerColumn(timePickerHour), { passive: true });
     timePickerMinute.addEventListener("scroll", () => settleTimePickerColumn(timePickerMinute), { passive: true });
