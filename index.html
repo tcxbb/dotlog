@@ -1585,6 +1585,13 @@
       font-weight: 650;
     }
 
+    #settingsView,
+    #settingsView * {
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+    }
+
     .category-config-list {
       display: grid;
       gap: 18px;
@@ -6014,6 +6021,9 @@
     });
 
     settingsButton.addEventListener("click", showSettingsPage);
+    settingsView.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+    });
 
     weekNav.addEventListener("touchstart", (event) => {
       weekSwipeStartX = event.touches[0].clientX;

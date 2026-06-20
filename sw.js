@@ -1,4 +1,4 @@
-const CACHE_NAME = "dotlog-v1.2.8-settings-visual-polish";
+const CACHE_NAME = "dotlog-v1.2.9-settings-no-text-selection";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (event) => {
