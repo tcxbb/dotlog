@@ -42,22 +42,26 @@
     .page {
       width: min(100%, 720px);
       margin: 0 auto;
-      padding: 56px 20px 100px;
+      padding: 0 20px 100px;
     }
 
-    .app-title {
-      margin: 0;
-      font-family: Georgia, 'Times New Roman', serif;
-      font-size: 1.6rem;
-      font-weight: normal;
-      letter-spacing: 0;
+    .top-region {
+      position: sticky;
+      top: 0;
+      z-index: 500;
+      padding: calc(10px + env(safe-area-inset-top)) 0 7px;
+      border-bottom: 1px solid rgba(224, 221, 216, 0.72);
+      background: var(--bg);
+      box-shadow: 0 4px 10px rgba(26, 26, 26, 0.025);
     }
 
     .page-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 20px 0 12px;
+      gap: 12px;
+      min-height: 32px;
+      padding: 0;
       border-bottom: 0;
     }
 
@@ -73,7 +77,7 @@
     .header-actions {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 5px;
       flex-shrink: 0;
     }
 
@@ -153,54 +157,38 @@
       display: none !important;
     }
 
-    .month-bar {
-      display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-      padding: 16px 0 8px;
-    }
-
     .month-title {
       color: var(--text);
-      font-size: 28px;
+      min-width: 0;
+      overflow: hidden;
+      font-size: 23px;
       font-weight: 700;
-      letter-spacing: -0.5px;
+      letter-spacing: -0.35px;
       margin: 0;
+      white-space: nowrap;
+      text-overflow: ellipsis;
     }
 
-    .month-bar-actions {
+    .top-meta-row {
       display: flex;
       align-items: center;
-      gap: 8px;
-      min-width: 0;
+      justify-content: space-between;
+      gap: 10px;
+      min-height: 21px;
+      padding-top: 2px;
     }
 
     .month-meta {
       color: var(--muted);
-      padding-bottom: 2px;
       font-size: 13px;
       font-variant-numeric: tabular-nums;
       white-space: nowrap;
     }
 
-    .today-btn {
-      border: 1px solid var(--accent);
-      border-radius: 6px;
-      background: transparent;
-      color: var(--accent);
-      padding: 4px 12px;
-      font-size: 13px;
-      cursor: pointer;
-    }
-
-    .today-btn.is-hidden {
-      display: none;
-    }
-
     .week-nav {
       overflow: hidden;
-      margin-bottom: 8px;
-      padding: 8px 0 12px;
+      margin: 0;
+      padding: 5px 0 3px;
       user-select: none;
     }
 
@@ -212,7 +200,7 @@
     }
 
     .week-header {
-      margin-bottom: 6px;
+      margin-bottom: 3px;
     }
 
     .week-header span {
@@ -230,18 +218,18 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 4px;
+      gap: 0;
       border: 0;
       background: transparent;
-      padding: 4px 0;
+      padding: 2px 0;
       cursor: pointer;
       -webkit-tap-highlight-color: transparent;
     }
 
     .week-day-num {
       display: flex;
-      width: 34px;
-      height: 34px;
+      width: 32px;
+      height: 32px;
       align-items: center;
       justify-content: center;
       border-radius: 999px;
@@ -268,23 +256,17 @@
       font-weight: 700;
     }
 
-    .week-day-dot {
-      width: 4px;
-      height: 4px;
-      border-radius: 999px;
-      background: var(--muted);
+    .app-footer {
+      padding: 42px 72px calc(22px + env(safe-area-inset-bottom));
+      color: #AAA7A2;
+      font-size: 11px;
+      text-align: center;
+      white-space: nowrap;
     }
 
-    .week-day.is-today .week-day-dot {
-      background: var(--accent);
-    }
-
-    .week-day.is-today.is-selected .week-day-dot {
-      background: rgba(255, 255, 255, 0.7);
-    }
-
-    .week-day.is-selected:not(.is-today) .week-day-dot {
-      background: var(--muted);
+    .app-footer-brand {
+      font-family: Georgia, 'Times New Roman', serif;
+      font-size: 12px;
     }
 
     .sync-indicator {
@@ -1803,7 +1785,7 @@
     @media (max-width: 520px) {
       .page {
         width: 100%;
-        padding-top: 32px;
+        padding-top: 0;
       }
 
       .outline-button {
@@ -1844,9 +1826,9 @@
 </head>
 <body>
   <main class="page">
-    <header>
+    <header class="top-region">
       <div class="page-header">
-        <h1 class="app-title">Dotlog</h1>
+        <div class="month-title" id="monthTitle"></div>
         <div class="header-actions">
           <button class="icon-button" id="tableToggle" type="button" title="生成今日时间记录表" aria-label="生成今日时间记录表">
             <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
@@ -1882,14 +1864,6 @@
           <button class="settings-button" id="settingsButton" type="button" aria-label="分类与标签管理">⚙️</button>
         </div>
       </div>
-      <div class="month-bar">
-        <div class="month-title" id="monthTitle"></div>
-        <div class="month-bar-actions">
-          <div class="month-meta" id="monthMeta"></div>
-          <span class="sync-indicator is-hidden" id="syncIndicator"></span>
-          <button class="today-btn is-hidden" id="todayBtn" type="button">今天</button>
-        </div>
-      </div>
 
       <div class="week-nav" id="weekNav">
         <div class="week-header" aria-hidden="true">
@@ -1903,6 +1877,10 @@
         </div>
         <div class="week-days" id="weekDays"></div>
       </div>
+      <div class="top-meta-row">
+        <div class="month-meta" id="monthMeta"></div>
+        <span class="sync-indicator is-hidden" id="syncIndicator"></span>
+      </div>
     </header>
 
     <section class="table-tools" id="tableTools">
@@ -1911,6 +1889,9 @@
     </section>
 
     <section id="recordsArea" aria-live="polite"></section>
+    <footer class="app-footer" id="appFooter">
+      <span class="app-footer-brand">Dotlog</span> · daily time log
+    </footer>
     <section class="settings-view is-hidden" id="settingsView"></section>
 
     <div class="calendar-import-overlay is-hidden" id="calendarImportOverlay" role="dialog" aria-modal="true" aria-labelledby="calendarImportTitle">
@@ -2070,9 +2051,9 @@
     const exportStatus = document.querySelector("#exportStatus");
     const tableArea = document.querySelector("#tableArea");
     const recordsArea = document.querySelector("#recordsArea");
+    const appFooter = document.querySelector("#appFooter");
     const monthTitle = document.querySelector("#monthTitle");
     const monthMeta = document.querySelector("#monthMeta");
-    const todayBtn = document.querySelector("#todayBtn");
     const weekNav = document.querySelector("#weekNav");
     const weekDays = document.querySelector("#weekDays");
     const syncIndicator = document.querySelector("#syncIndicator");
@@ -2174,11 +2155,9 @@
     }
 
     function isSameDate(first, second) {
-      return formatDateKey(first) === formatDateKey(second);
-    }
-
-    function hasRecords(date) {
-      return loadRecords(date).length > 0;
+      return first.getFullYear() === second.getFullYear()
+        && first.getMonth() === second.getMonth()
+        && first.getDate() === second.getDate();
     }
 
     function formatDateLabel(date) {
@@ -2547,7 +2526,7 @@
     }
 
     function isToday(date) {
-      return formatDateKey(date) === formatDateKey(today);
+      return isSameDate(date, new Date());
     }
 
     function normalizeRecord(record) {
@@ -2934,8 +2913,9 @@
       weekDays.replaceChildren();
       const todayDate = startOfDay(new Date());
 
-      monthTitle.textContent = formatShortDateLabel(viewedDate);
-      todayBtn.classList.toggle("is-hidden", isSameDate(viewedDate, todayDate));
+      monthTitle.textContent = isSameDate(viewedDate, todayDate)
+        ? "今天"
+        : formatShortDateLabel(viewedDate);
 
       for (let index = 0; index < 7; index += 1) {
         const date = offsetDate(currentWeekStart, index);
@@ -2950,12 +2930,6 @@
         number.className = "week-day-num";
         number.textContent = String(date.getDate());
         day.append(number);
-
-        if (hasRecords(date)) {
-          const dot = document.createElement("span");
-          dot.className = "week-day-dot";
-          day.append(dot);
-        }
 
         day.addEventListener("click", () => setViewedDate(date));
         weekDays.append(day);
@@ -3611,6 +3585,7 @@
       fab.classList.add("is-hidden");
       tableTools.classList.add("is-hidden");
       recordsArea.classList.add("is-hidden");
+      appFooter.classList.add("is-hidden");
       settingsView.classList.remove("is-hidden");
       renderSettingsPage();
     }
@@ -3625,6 +3600,7 @@
       pageHeader.classList.remove("is-hidden");
       tableTools.classList.remove("is-hidden");
       recordsArea.classList.remove("is-hidden");
+      appFooter.classList.remove("is-hidden");
       settingsView.classList.add("is-hidden");
       render();
     }
@@ -5256,8 +5232,6 @@
         goToPrevWeek();
       }
     }, { passive: true });
-
-    todayBtn.addEventListener("click", () => setViewedDate(new Date()));
 
     document.addEventListener("pointerdown", (event) => {
       if (editingRecordIndex === null) return;
