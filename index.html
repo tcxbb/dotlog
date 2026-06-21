@@ -2650,8 +2650,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
-    const APP_VERSION = "v1.4.10";
-    const APP_BUILD_TIME = "2026-06-22 00:48";
+    const APP_VERSION = "v1.4.11";
+    const APP_BUILD_TIME = "2026-06-22 00:59";
 
     const entryForm = document.querySelector("#entryForm");
     const entryInput = document.querySelector("#entryInput");
@@ -4264,6 +4264,439 @@
       console.info("未修改 record.category、record.tags、record.id；未触发 Gist 同步。");
       console.groupEnd();
       return result;
+    }
+
+    function auditDotlogPostMigrationState() {
+      const dateKeyPattern = /^time_tracker_(\d{4}-\d{2}-\d{2})$/;
+      const recordUuidPattern = /^rec_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      const cleanString = (value) => typeof value === "string" ? value.trim() : "";
+      const cleanStringArray = (value) => Array.isArray(value)
+        ? value.map(cleanString).filter(Boolean)
+        : [];
+      const addToIndex = (index, key, value) => {
+        if (!key) return;
+        if (!index.has(key)) index.set(key, []);
+        index.get(key).push(value);
+      };
+      const isRealDate = (date) => {
+        const [year, month, day] = date.split("-").map(Number);
+        if (!year || !month || !day) return false;
+        const parsed = new Date(Date.UTC(year, month - 1, day));
+        return parsed.getUTCFullYear() === year
+          && parsed.getUTCMonth() === month - 1
+          && parsed.getUTCDate() === day;
+      };
+      const sameStringArray = (left, right) => left.length === right.length
+        && left.every((value, index) => value === right[index]);
+      const recordLocation = (dateKey, recordIndex, record) => ({
+        dateKey,
+        recordIndex,
+        recordId: cleanString(record?.id) || null,
+        title: cleanString(record?.title)
+          || cleanString(record?.text)
+          || cleanString(record?.summary)
+          || cleanString(record?.description)
+          || null,
+        startTime: cleanString(record?.startTime) || null,
+        time: cleanString(record?.time) || null
+      });
+
+      const storageErrors = [];
+      const abnormalDateKeys = [];
+      const dateEntries = [];
+      for (let index = 0; index < localStorage.length; index += 1) {
+        const key = localStorage.key(index);
+        if (!key?.startsWith("time_tracker_")) continue;
+        const match = key.match(dateKeyPattern);
+        if (!match || !isRealDate(match[1])) {
+          abnormalDateKeys.push(key);
+          continue;
+        }
+
+        try {
+          const records = JSON.parse(localStorage.getItem(key));
+          if (!Array.isArray(records)) {
+            storageErrors.push({ key, error: "记录数据不是数组" });
+            continue;
+          }
+          dateEntries.push({ key, dateKey: match[1], records });
+        } catch (error) {
+          storageErrors.push({
+            key,
+            error: error instanceof Error ? error.message : String(error)
+          });
+        }
+      }
+      dateEntries.sort((left, right) => left.dateKey.localeCompare(right.dateKey));
+
+      let categoryConfigError = null;
+      let categoryConfig = null;
+      const rawCategoryConfig = localStorage.getItem("category_config");
+      if (!rawCategoryConfig) {
+        categoryConfigError = "category_config 不存在";
+      } else {
+        try {
+          categoryConfig = JSON.parse(rawCategoryConfig);
+        } catch (error) {
+          categoryConfigError = error instanceof Error ? error.message : String(error);
+        }
+      }
+
+      const categoryById = new Map();
+      const categoryByName = new Map();
+      const tagById = new Map();
+      const tagByName = new Map();
+      const categories = Array.isArray(categoryConfig?.categories) ? categoryConfig.categories : [];
+      categories.forEach((category, categoryIndex) => {
+        if (!category || typeof category !== "object" || Array.isArray(category)) return;
+        const categoryRef = {
+          id: cleanString(category.id) || null,
+          name: cleanString(category.name) || null,
+          categoryIndex,
+          tags: []
+        };
+        addToIndex(categoryById, categoryRef.id, categoryRef);
+        addToIndex(categoryByName, categoryRef.name, categoryRef);
+        if (!Array.isArray(category.tags)) return;
+        category.tags.forEach((tag, tagIndex) => {
+          const tagRef = {
+            id: cleanString(tag?.id) || null,
+            name: cleanString(typeof tag === "string" ? tag : tag?.name) || null,
+            categoryId: categoryRef.id,
+            categoryName: categoryRef.name,
+            categoryIndex,
+            tagIndex
+          };
+          categoryRef.tags.push(tagRef);
+          addToIndex(tagById, tagRef.id, tagRef);
+          addToIndex(tagByName, tagRef.name, tagRef);
+        });
+      });
+
+      const emptyDates = dateEntries
+        .filter(({ records }) => records.length === 0)
+        .map(({ dateKey }) => dateKey);
+      const report = {
+        generatedAt: new Date().toISOString(),
+        readOnly: true,
+        overview: {
+          dateCount: dateEntries.length,
+          recordCount: dateEntries.reduce((sum, entry) => sum + entry.records.length, 0),
+          recordsPerDate: dateEntries.map(({ dateKey, records }) => ({ dateKey, count: records.length })),
+          emptyDates,
+          abnormalDateKeys,
+          recordCountAnomalous: false,
+          anomalyReasons: []
+        },
+        recordIds: {
+          missing: 0,
+          legacy: 0,
+          uuid: 0,
+          abnormal: 0,
+          missingRecords: [],
+          abnormalRecords: [],
+          duplicates: []
+        },
+        categories: {
+          withResolvableCategoryId: 0,
+          withUnknownCategoryId: 0,
+          withoutCategoryIdWithFallback: 0,
+          withoutCategoryIdAndUnusableCategory: 0,
+          fallbackHits: [],
+          unknownCategoryIds: [],
+          unresolvableRecords: []
+        },
+        tags: {
+          withAllResolvableTagIds: 0,
+          withPartlyUnresolvableTagIds: 0,
+          withoutTagIdsWithFallback: 0,
+          withoutTagIdsAndUnusableTags: 0,
+          fallbackHits: [],
+          unknownTagIds: [],
+          unresolvableRecords: []
+        },
+        legacyFields: {
+          recordsRetainingCategory: 0,
+          recordsRetainingTags: 0,
+          categoryNameMismatches: [],
+          tagNameMismatches: []
+        },
+        risks: {
+          hasUnknownCategoryIds: false,
+          hasUnknownTagIds: false,
+          hasDuplicateRecordIds: false,
+          hasMissingRecordIds: false,
+          hasUnresolvableClassification: false,
+          recommendManualCleanupFirst: false,
+          recommendSyncMergeRefactor: false,
+          recommendation: ""
+        },
+        errors: {
+          categoryConfig: categoryConfigError,
+          storage: storageErrors,
+          malformedRecords: []
+        }
+      };
+
+      const recordIdOccurrences = new Map();
+      dateEntries.forEach(({ dateKey, records }) => {
+        records.forEach((record, recordIndex) => {
+          const location = recordLocation(dateKey, recordIndex, record);
+          if (!record || typeof record !== "object" || Array.isArray(record)) {
+            report.errors.malformedRecords.push({ ...location, error: "记录不是对象" });
+            return;
+          }
+
+          const recordId = cleanString(record.id);
+          if (!recordId) {
+            report.recordIds.missing += 1;
+            report.recordIds.missingRecords.push(location);
+          } else {
+            addToIndex(recordIdOccurrences, recordId, location);
+            if (recordId.startsWith("rec_legacy_")) {
+              report.recordIds.legacy += 1;
+            } else if (recordUuidPattern.test(recordId)) {
+              report.recordIds.uuid += 1;
+            } else {
+              report.recordIds.abnormal += 1;
+              report.recordIds.abnormalRecords.push(location);
+            }
+          }
+
+          const categoryId = cleanString(record.categoryId);
+          const categoryName = cleanString(record.category);
+          if (categoryName) report.legacyFields.recordsRetainingCategory += 1;
+          const categoryIdMatches = categoryId ? categoryById.get(categoryId) || [] : [];
+          const categoryNameMatches = categoryName ? categoryByName.get(categoryName) || [] : [];
+          const idCategory = categoryIdMatches.length === 1 ? categoryIdMatches[0] : null;
+          const fallbackCategory = categoryNameMatches.length === 1 ? categoryNameMatches[0] : null;
+          let resolvedCategory = idCategory;
+
+          if (idCategory) {
+            report.categories.withResolvableCategoryId += 1;
+            if (categoryName && categoryName !== idCategory.name) {
+              report.legacyFields.categoryNameMismatches.push({
+                ...location,
+                categoryId,
+                legacyCategoryName: categoryName,
+                resolvedCategoryName: idCategory.name
+              });
+            }
+          } else if (categoryId) {
+            report.categories.withUnknownCategoryId += 1;
+            report.categories.unknownCategoryIds.push({
+              ...location,
+              categoryId,
+              reason: categoryIdMatches.length > 1 ? "duplicate categoryId in config" : "categoryId not found"
+            });
+            if (fallbackCategory) {
+              resolvedCategory = fallbackCategory;
+              report.categories.fallbackHits.push({
+                ...location,
+                source: "unknown categoryId",
+                legacyCategoryName: categoryName,
+                resolvedCategoryId: fallbackCategory.id
+              });
+            } else {
+              report.categories.unresolvableRecords.push({
+                ...location,
+                categoryId,
+                category: categoryName || null,
+                reason: categoryNameMatches.length > 1
+                  ? "旧分类名称存在歧义"
+                  : "未知 categoryId 且旧分类名称无法兜底"
+              });
+            }
+          } else if (fallbackCategory) {
+            resolvedCategory = fallbackCategory;
+            report.categories.withoutCategoryIdWithFallback += 1;
+            report.categories.fallbackHits.push({
+              ...location,
+              source: "missing categoryId",
+              legacyCategoryName: categoryName,
+              resolvedCategoryId: fallbackCategory.id
+            });
+          } else {
+            report.categories.withoutCategoryIdAndUnusableCategory += 1;
+            if (categoryName) {
+              report.categories.unresolvableRecords.push({
+                ...location,
+                category: categoryName,
+                reason: categoryNameMatches.length > 1 ? "旧分类名称存在歧义" : "旧分类名称无法匹配"
+              });
+            }
+          }
+
+          const legacyTagNames = cleanStringArray(record.tags);
+          if (legacyTagNames.length > 0) report.legacyFields.recordsRetainingTags += 1;
+          const tagIds = cleanStringArray(record.tagIds);
+          const resolvedIdTags = [];
+          const unknownTagIds = [];
+          tagIds.forEach((tagId) => {
+            const matches = tagById.get(tagId) || [];
+            if (matches.length === 1) resolvedIdTags.push(matches[0]);
+            else unknownTagIds.push({
+              tagId,
+              reason: matches.length > 1 ? "duplicate tagId in config" : "tagId not found"
+            });
+          });
+
+          const matchLegacyTags = () => {
+            const matchedTags = [];
+            const failures = [];
+            legacyTagNames.forEach((tagName) => {
+              const matches = resolvedCategory
+                ? resolvedCategory.tags.filter((tag) => tag.name === tagName)
+                : (tagByName.get(tagName) || []);
+              if (matches.length === 1) matchedTags.push(matches[0]);
+              else failures.push({
+                tagName,
+                reason: matches.length > 1 ? "旧标签名称存在歧义" : "旧标签名称无法匹配"
+              });
+            });
+            return { matchedTags, failures };
+          };
+
+          if (tagIds.length > 0 && unknownTagIds.length === 0) {
+            report.tags.withAllResolvableTagIds += 1;
+            const resolvedNames = resolvedIdTags.map((tag) => tag.name);
+            if (legacyTagNames.length > 0 && !sameStringArray(legacyTagNames, resolvedNames)) {
+              report.legacyFields.tagNameMismatches.push({
+                ...location,
+                tagIds: [...tagIds],
+                legacyTagNames: [...legacyTagNames],
+                resolvedTagNames: resolvedNames
+              });
+            }
+          } else if (tagIds.length > 0) {
+            report.tags.withPartlyUnresolvableTagIds += 1;
+            report.tags.unknownTagIds.push({ ...location, unknownTagIds });
+            const fallback = matchLegacyTags();
+            if (legacyTagNames.length > 0 && fallback.failures.length === 0) {
+              report.tags.fallbackHits.push({
+                ...location,
+                source: "unknown tagIds",
+                legacyTagNames: [...legacyTagNames],
+                resolvedTagIds: fallback.matchedTags.map((tag) => tag.id)
+              });
+            } else {
+              report.tags.unresolvableRecords.push({
+                ...location,
+                tagIds: [...tagIds],
+                tags: [...legacyTagNames],
+                reason: fallback.failures.length > 0
+                  ? fallback.failures.map((failure) => `${failure.tagName}: ${failure.reason}`).join("; ")
+                  : "未知 tagIds 且没有旧标签名称兜底"
+              });
+            }
+          } else if (legacyTagNames.length > 0) {
+            const fallback = matchLegacyTags();
+            if (fallback.failures.length === 0) {
+              report.tags.withoutTagIdsWithFallback += 1;
+              report.tags.fallbackHits.push({
+                ...location,
+                source: "missing tagIds",
+                legacyTagNames: [...legacyTagNames],
+                resolvedTagIds: fallback.matchedTags.map((tag) => tag.id)
+              });
+            } else {
+              report.tags.withoutTagIdsAndUnusableTags += 1;
+              report.tags.unresolvableRecords.push({
+                ...location,
+                tags: [...legacyTagNames],
+                reason: fallback.failures.map((failure) => `${failure.tagName}: ${failure.reason}`).join("; ")
+              });
+            }
+          } else {
+            report.tags.withoutTagIdsAndUnusableTags += 1;
+          }
+        });
+      });
+
+      report.recordIds.duplicates = [...recordIdOccurrences.entries()]
+        .filter(([, occurrences]) => occurrences.length > 1)
+        .map(([recordId, occurrences]) => ({ recordId, occurrences }));
+
+      if (emptyDates.length > 0) report.overview.anomalyReasons.push("存在记录数为 0 的日期 key");
+      if (abnormalDateKeys.length > 0) report.overview.anomalyReasons.push("存在异常日期 key");
+      if (storageErrors.length > 0) report.overview.anomalyReasons.push("存在无法解析的日期记录");
+      if (report.errors.malformedRecords.length > 0) report.overview.anomalyReasons.push("存在格式异常的记录");
+      report.overview.recordCountAnomalous = report.overview.anomalyReasons.length > 0;
+
+      report.risks.hasUnknownCategoryIds = report.categories.withUnknownCategoryId > 0;
+      report.risks.hasUnknownTagIds = report.tags.withPartlyUnresolvableTagIds > 0;
+      report.risks.hasDuplicateRecordIds = report.recordIds.duplicates.length > 0;
+      report.risks.hasMissingRecordIds = report.recordIds.missing > 0;
+      report.risks.hasUnresolvableClassification = report.categories.unresolvableRecords.length > 0
+        || report.tags.unresolvableRecords.length > 0;
+      report.risks.recommendManualCleanupFirst = Boolean(
+        categoryConfigError
+        || storageErrors.length > 0
+        || abnormalDateKeys.length > 0
+        || report.errors.malformedRecords.length > 0
+        || report.risks.hasUnknownCategoryIds
+        || report.risks.hasUnknownTagIds
+        || report.risks.hasDuplicateRecordIds
+        || report.risks.hasMissingRecordIds
+        || report.risks.hasUnresolvableClassification
+      );
+      report.risks.recommendSyncMergeRefactor = !report.risks.recommendManualCleanupFirst;
+      report.risks.recommendation = report.risks.recommendManualCleanupFirst
+        ? "先人工处理报告中的异常记录，再进入同步合并改造。"
+        : "未发现阻断项，可以进入同步合并改造；fallback 命中仍应保留兼容。";
+
+      window.__dotlogPostMigrationAudit = report;
+      console.group("[Dotlog] 迁移后状态与 fallback 命中只读审计");
+      console.log("完整报告：window.__dotlogPostMigrationAudit", report);
+      console.table([{
+        日期数: report.overview.dateCount,
+        记录数: report.overview.recordCount,
+        分类fallback: report.categories.fallbackHits.length,
+        标签fallback: report.tags.fallbackHits.length,
+        分类名称不一致: report.legacyFields.categoryNameMismatches.length,
+        标签名称不一致: report.legacyFields.tagNameMismatches.length
+      }]);
+      console.groupCollapsed("每日记录数与日期异常");
+      console.table(report.overview.recordsPerDate);
+      console.log({
+        emptyDates: report.overview.emptyDates,
+        abnormalDateKeys: report.overview.abnormalDateKeys,
+        recordCountAnomalous: report.overview.recordCountAnomalous,
+        anomalyReasons: report.overview.anomalyReasons
+      });
+      console.groupEnd();
+      console.groupCollapsed("record.id 状态");
+      console.table([{
+        缺失: report.recordIds.missing,
+        legacy: report.recordIds.legacy,
+        uuid: report.recordIds.uuid,
+        异常格式: report.recordIds.abnormal,
+        重复ID: report.recordIds.duplicates.length
+      }]);
+      console.log(report.recordIds);
+      console.groupEnd();
+      console.groupCollapsed("分类 ID 与 fallback");
+      console.log(report.categories);
+      console.table(report.categories.fallbackHits);
+      console.groupEnd();
+      console.groupCollapsed("标签 ID 与 fallback");
+      console.log(report.tags);
+      console.table(report.tags.fallbackHits);
+      console.groupEnd();
+      console.groupCollapsed("旧字段一致性");
+      console.log(report.legacyFields);
+      console.groupEnd();
+      console.groupCollapsed("风险与下一步建议");
+      console.log(report.risks);
+      console.groupEnd();
+      if (report.risks.recommendManualCleanupFirst) {
+        console.warn(report.risks.recommendation);
+      } else {
+        console.info(report.risks.recommendation);
+      }
+      console.info("审计为只读操作：未修改记录、未写 localStorage、未触发保存或同步。");
+      console.groupEnd();
+      return report;
     }
 
     function mapTagIdsByName(tags, tagIds) {
