@@ -2650,8 +2650,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
-    const APP_VERSION = "v1.4.13";
-    const APP_BUILD_TIME = "2026-06-22 01:15";
+    const APP_VERSION = "v1.4.14";
+    const APP_BUILD_TIME = "2026-06-22 01:26";
 
     const entryForm = document.querySelector("#entryForm");
     const entryInput = document.querySelector("#entryInput");
@@ -6178,6 +6178,402 @@
         throw error;
       }
       return data;
+    }
+
+    async function auditDotlogSyncState() {
+      const dateKeyPattern = /^\d{4}-\d{2}-\d{2}$/;
+      const recordUuidPattern = /^rec_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      const cleanString = (value) => typeof value === "string" ? value.trim() : "";
+      const isRealDate = (dateKey) => {
+        if (!dateKeyPattern.test(dateKey)) return false;
+        const [year, month, day] = dateKey.split("-").map(Number);
+        const parsed = new Date(Date.UTC(year, month - 1, day));
+        return parsed.getUTCFullYear() === year
+          && parsed.getUTCMonth() === month - 1
+          && parsed.getUTCDate() === day;
+      };
+      const recordSummary = (source, dateKey, recordIndex, record) => ({
+        source,
+        dateKey,
+        recordIndex,
+        recordId: cleanString(record?.id) || null,
+        start: cleanString(record?.start || record?.startTime) || null,
+        end: cleanString(record?.end || record?.endTime || record?.time) || null,
+        title: cleanString(record?.title || record?.text || record?.summary || record?.description) || null
+      });
+
+      const errors = {
+        local: [],
+        remote: [],
+        remoteRequest: null,
+        malformedRecords: []
+      };
+      const localAbnormalDateKeys = [];
+      const remoteAbnormalDateKeys = [];
+      const localRecordsByDate = {};
+      const localErrorDateKeys = new Set();
+      for (let index = 0; index < localStorage.length; index += 1) {
+        const storageKey = localStorage.key(index);
+        if (!storageKey?.startsWith("time_tracker_")) continue;
+        const dateKey = storageKey.replace(/^time_tracker_/, "");
+        if (!isRealDate(dateKey)) {
+          localAbnormalDateKeys.push(storageKey);
+          continue;
+        }
+        try {
+          const records = JSON.parse(localStorage.getItem(storageKey));
+          if (!Array.isArray(records)) throw new Error("记录数据不是数组");
+          localRecordsByDate[dateKey] = records;
+        } catch (error) {
+          localErrorDateKeys.add(dateKey);
+          errors.local.push({
+            dateKey,
+            storageKey,
+            error: error instanceof Error ? error.message : String(error)
+          });
+        }
+      }
+
+      let remoteReadSucceeded = false;
+      let remoteRequestAttempted = false;
+      const remoteRecordsByDate = {};
+      const remoteErrorDateKeys = new Set();
+      if (syncInProgress) {
+        errors.remoteRequest = "真实同步正在进行，请等待完成后重新审计";
+      } else {
+        const { token, gistId } = getGistSettings();
+        if (!token || !gistId) {
+          errors.remoteRequest = "Gist Token 或 Gist ID 未配置";
+        } else {
+          try {
+            remoteRequestAttempted = true;
+            const gist = await requestGist("GET");
+            const content = gist.files?.[gistDataFile]?.content;
+            if (!content) throw new Error(`${gistDataFile} 不存在或内容为空`);
+            const remoteData = JSON.parse(content);
+            if (!remoteData || typeof remoteData !== "object" || Array.isArray(remoteData)) {
+              throw new Error("远程 Gist 数据不是对象");
+            }
+            if (!remoteData.records || typeof remoteData.records !== "object"
+              || Array.isArray(remoteData.records)) {
+              throw new Error("远程 records 不是对象");
+            }
+            Object.entries(remoteData.records).forEach(([dateKey, records]) => {
+              if (!isRealDate(dateKey)) {
+                remoteAbnormalDateKeys.push(dateKey);
+                errors.remote.push({ dateKey, error: "远程日期 key 异常" });
+                return;
+              }
+              if (!Array.isArray(records)) {
+                remoteErrorDateKeys.add(dateKey);
+                errors.remote.push({ dateKey, error: "远程日期记录不是数组" });
+                return;
+              }
+              remoteRecordsByDate[dateKey] = records;
+            });
+            remoteReadSucceeded = true;
+          } catch (error) {
+            errors.remoteRequest = error instanceof Error ? error.message : String(error);
+          }
+        }
+      }
+
+      const scanRecordIds = (recordsByDate, source) => {
+        const idIndex = new Map();
+        const missing = [];
+        const abnormal = [];
+        Object.entries(recordsByDate).forEach(([dateKey, records]) => {
+          records.forEach((record, recordIndex) => {
+            const summary = recordSummary(source, dateKey, recordIndex, record);
+            if (!record || typeof record !== "object" || Array.isArray(record)) {
+              errors.malformedRecords.push({ ...summary, reason: "记录不是对象" });
+              return;
+            }
+            const recordId = cleanString(record.id);
+            if (!recordId) {
+              missing.push(summary);
+              return;
+            }
+            if (!idIndex.has(recordId)) idIndex.set(recordId, []);
+            idIndex.get(recordId).push({ source, dateKey, recordIndex, record });
+            if (!recordId.startsWith("rec_legacy_") && !recordUuidPattern.test(recordId)) {
+              abnormal.push(summary);
+            }
+          });
+        });
+        const duplicates = [...idIndex.entries()]
+          .filter(([, occurrences]) => occurrences.length > 1)
+          .map(([recordId, occurrences]) => ({
+            source,
+            recordId,
+            occurrences: occurrences.map(({ dateKey, recordIndex, record }) => (
+              recordSummary(source, dateKey, recordIndex, record)
+            ))
+          }));
+        const sameDateDuplicates = duplicates.filter(({ occurrences }) => (
+          new Set(occurrences.map(({ dateKey }) => dateKey)).size < occurrences.length
+        ));
+        return { idIndex, missing, abnormal, duplicates, sameDateDuplicates };
+      };
+
+      const localIdHealth = scanRecordIds(localRecordsByDate, "local");
+      const remoteIdHealth = scanRecordIds(remoteRecordsByDate, "remote");
+      const localDates = Object.keys(localRecordsByDate).sort();
+      const remoteDates = Object.keys(remoteRecordsByDate).sort();
+      const localDateSet = new Set(localDates);
+      const remoteDateSet = new Set(remoteDates);
+      const allDates = [...new Set([
+        ...localDates,
+        ...remoteDates,
+        ...localErrorDateKeys,
+        ...remoteErrorDateKeys
+      ])].sort();
+
+      const crossDateIdConflicts = [];
+      localIdHealth.idIndex.forEach((localOccurrences, recordId) => {
+        const remoteOccurrences = remoteIdHealth.idIndex.get(recordId) || [];
+        if (localOccurrences.length !== 1 || remoteOccurrences.length !== 1) return;
+        if (localOccurrences[0].dateKey === remoteOccurrences[0].dateKey) return;
+        crossDateIdConflicts.push({
+          recordId,
+          local: recordSummary(
+            "local",
+            localOccurrences[0].dateKey,
+            localOccurrences[0].recordIndex,
+            localOccurrences[0].record
+          ),
+          remote: recordSummary(
+            "remote",
+            remoteOccurrences[0].dateKey,
+            remoteOccurrences[0].recordIndex,
+            remoteOccurrences[0].record
+          )
+        });
+      });
+
+      const duplicateRiskDates = new Set([
+        ...localIdHealth.duplicates.flatMap(({ occurrences }) => occurrences.map(({ dateKey }) => dateKey)),
+        ...remoteIdHealth.duplicates.flatMap(({ occurrences }) => occurrences.map(({ dateKey }) => dateKey)),
+        ...crossDateIdConflicts.flatMap(({ local, remote }) => [local.dateKey, remote.dateKey])
+      ]);
+      const missingRiskDates = new Set([
+        ...localIdHealth.missing.map(({ dateKey }) => dateKey),
+        ...remoteIdHealth.missing.map(({ dateKey }) => dateKey)
+      ]);
+      const abnormalIdDates = new Set([
+        ...localIdHealth.abnormal.map(({ dateKey }) => dateKey),
+        ...remoteIdHealth.abnormal.map(({ dateKey }) => dateKey)
+      ]);
+      const malformedDates = new Set(errors.malformedRecords.map(({ dateKey }) => dateKey));
+
+      const dateResults = allDates.map((dateKey) => mergeDateRecordsByRecordId(
+        localRecordsByDate[dateKey] || [],
+        remoteRecordsByDate[dateKey] || [],
+        dateKey,
+        {
+          localDateExists: localDateSet.has(dateKey),
+          remoteDateExists: remoteDateSet.has(dateKey)
+        }
+      ));
+      const dateResultByKey = new Map(dateResults.map((result) => [result.dateKey, result]));
+
+      const localOnlyRecords = dateResults.flatMap((result) => result.onlyLocal.map((item) => ({
+        ...recordSummary("local", result.dateKey, null, item.record),
+        recordId: item.recordId
+      })));
+      const remoteOnlyRecords = dateResults.flatMap((result) => result.onlyRemote.map((item) => ({
+        ...recordSummary("remote", result.dateKey, null, item.record),
+        recordId: item.recordId
+      })));
+      const localOnlyMissingFromCandidate = [];
+      const remoteOnlyMissingFromCandidate = [];
+      dateResults.forEach((result) => {
+        const mergedIds = new Set(result.mergedRecords
+          .map((record) => normalizeReferenceId(record?.id))
+          .filter(Boolean));
+        result.onlyLocal.forEach((item) => {
+          if (!mergedIds.has(item.recordId)) localOnlyMissingFromCandidate.push(item);
+        });
+        result.onlyRemote.forEach((item) => {
+          if (!mergedIds.has(item.recordId)) remoteOnlyMissingFromCandidate.push(item);
+        });
+      });
+
+      const dailyStatus = allDates.map((dateKey) => {
+        const result = dateResultByKey.get(dateKey);
+        const hasParseError = localErrorDateKeys.has(dateKey) || remoteErrorDateKeys.has(dateKey);
+        let status = "healthy";
+        if (!remoteReadSucceeded || hasParseError || malformedDates.has(dateKey)) {
+          status = "needs-manual-review";
+        } else if (missingRiskDates.has(dateKey)) {
+          status = "missing-id-risk";
+        } else if (duplicateRiskDates.has(dateKey)) {
+          status = "duplicate-id-risk";
+        } else if (result.conflicts.length > 0) {
+          status = "content-conflict-risk";
+        } else if (result.sparseRisk.hasRisk) {
+          status = result.sparseRisk.sparseSide === "local"
+            ? "local-sparse-risk"
+            : "remote-sparse-risk";
+        } else if (result.suspectedDuplicates.length > 0 || abnormalIdDates.has(dateKey)) {
+          status = "needs-manual-review";
+        } else if (result.onlyLocal.length > 0 || result.onlyRemote.length > 0
+          || result.resolvedConflicts.length > 0) {
+          status = "safe-to-sync";
+        }
+
+        const mergedCount = result.countSafety.mergedCount;
+        const localCount = (localRecordsByDate[dateKey] || []).length;
+        const remoteCount = (remoteRecordsByDate[dateKey] || []).length;
+        return {
+          dateKey,
+          status,
+          localCount,
+          remoteCount,
+          theoreticalMergedCount: mergedCount,
+          sameIdCount: result.sameIds.length,
+          onlyLocalCount: result.onlyLocal.length,
+          onlyRemoteCount: result.onlyRemote.length,
+          contentConflictCount: result.conflicts.length,
+          resolvedConflictCount: result.resolvedConflicts.length,
+          suspectedDuplicateCount: result.suspectedDuplicates.length,
+          sparseRisk: result.sparseRisk.hasRisk,
+          shouldApplyBy7B: result.shouldApply
+            && !duplicateRiskDates.has(dateKey)
+            && !hasParseError,
+          recommendedAutoSync: status === "healthy" || status === "safe-to-sync",
+          theoreticalCountDecrease: mergedCount < localCount || mergedCount < remoteCount
+        };
+      });
+
+      const localSparseDates = dateResults
+        .filter((result) => result.sparseRisk.hasRisk && result.sparseRisk.sparseSide === "local")
+        .map((result) => result.sparseRisk);
+      const remoteSparseDates = dateResults
+        .filter((result) => result.sparseRisk.hasRisk && result.sparseRisk.sparseSide === "remote")
+        .map((result) => result.sparseRisk);
+      const theoreticalCountDecreaseDates = dailyStatus
+        .filter(({ theoreticalCountDecrease }) => theoreticalCountDecrease);
+      const datesNotAutoSync = dailyStatus.filter(({ status }) => (
+        status !== "healthy" && status !== "safe-to-sync"
+      ));
+      const contentConflicts = dateResults.flatMap((result) => result.conflicts);
+      const resolvedConflicts = dateResults.flatMap((result) => result.resolvedConflicts);
+      const suspectedDuplicates = dateResults.flatMap((result) => result.suspectedDuplicates);
+
+      const globalErrors = Boolean(
+        errors.local.length
+        || errors.remote.length
+        || errors.malformedRecords.length
+        || localAbnormalDateKeys.length
+        || remoteAbnormalDateKeys.length
+      );
+      const safeForAutomaticSync = remoteReadSucceeded
+        && !globalErrors
+        && datesNotAutoSync.length === 0
+        && localOnlyMissingFromCandidate.length === 0
+        && remoteOnlyMissingFromCandidate.length === 0
+        && theoreticalCountDecreaseDates.length === 0;
+      const fullyConverged = safeForAutomaticSync
+        && dailyStatus.every(({ status }) => status === "healthy");
+
+      const report = {
+        generatedAt: new Date().toISOString(),
+        readOnly: true,
+        remoteRequestMethod: remoteRequestAttempted ? "GET" : null,
+        overview: {
+          localDateCount: localDates.length,
+          remoteDateCount: remoteDates.length,
+          localRecordCount: Object.values(localRecordsByDate)
+            .reduce((sum, records) => sum + records.length, 0),
+          remoteRecordCount: Object.values(remoteRecordsByDate)
+            .reduce((sum, records) => sum + records.length, 0),
+          sharedDateKeys: allDates.filter((dateKey) => localDateSet.has(dateKey) && remoteDateSet.has(dateKey)),
+          onlyLocalDateKeys: localDates.filter((dateKey) => !remoteDateSet.has(dateKey)),
+          onlyRemoteDateKeys: remoteDates.filter((dateKey) => !localDateSet.has(dateKey))
+        },
+        recordIds: {
+          localDuplicateIds: localIdHealth.duplicates,
+          remoteDuplicateIds: remoteIdHealth.duplicates,
+          sameDateDuplicateIds: [
+            ...localIdHealth.sameDateDuplicates,
+            ...remoteIdHealth.sameDateDuplicates
+          ],
+          crossDateIdConflicts,
+          localMissingIds: localIdHealth.missing,
+          remoteMissingIds: remoteIdHealth.missing,
+          localAbnormalIds: localIdHealth.abnormal,
+          remoteAbnormalIds: remoteIdHealth.abnormal
+        },
+        mergeRisks: {
+          localOnlyRecords,
+          remoteOnlyRecords,
+          localOnlyMissingFromCandidate,
+          remoteOnlyMissingFromCandidate,
+          contentConflicts,
+          resolvedConflicts,
+          suspectedDuplicates,
+          sparseDates: [...localSparseDates, ...remoteSparseDates]
+        },
+        quantityRisks: {
+          localSignificantlyLessThanRemote: localSparseDates,
+          remoteSignificantlyLessThanLocal: remoteSparseDates,
+          theoreticalCountDecreaseDates,
+          datesNotAutoSync
+        },
+        dailyStatus,
+        health: {
+          remoteReadSucceeded,
+          safeForAutomaticSync,
+          fullyConverged,
+          status: !safeForAutomaticSync
+            ? "needs-manual-review"
+            : fullyConverged ? "healthy" : "safe-to-sync",
+          recommendation: !safeForAutomaticSync
+            ? "存在阻断项，不应自动同步；先检查 quantityRisks、recordIds 和 mergeRisks。"
+            : fullyConverged
+              ? "本地与远程已按 record.id 收敛，未发现同步风险。"
+              : "未发现阻断项，存在可安全同步的单侧新增记录。"
+        },
+        errors: {
+          ...errors,
+          localAbnormalDateKeys,
+          remoteAbnormalDateKeys
+        }
+      };
+
+      window.__dotlogSyncHealthAudit = report;
+      console.group("[Dotlog] 第 7B 同步改造后健康审计（只读）");
+      console.log("完整报告：window.__dotlogSyncHealthAudit", report);
+      console.table([{
+        本地日期: report.overview.localDateCount,
+        远程日期: report.overview.remoteDateCount,
+        本地记录: report.overview.localRecordCount,
+        远程记录: report.overview.remoteRecordCount,
+        本地重复ID: report.recordIds.localDuplicateIds.length,
+        远程重复ID: report.recordIds.remoteDuplicateIds.length,
+        内容冲突: report.mergeRisks.contentConflicts.length,
+        稀疏日期: report.mergeRisks.sparseDates.length,
+        总体状态: report.health.status
+      }]);
+      console.groupCollapsed("每日同步健康状态");
+      console.table(report.dailyStatus);
+      console.groupEnd();
+      console.groupCollapsed("record.id 健康");
+      console.log(report.recordIds);
+      console.groupEnd();
+      console.groupCollapsed("合并与数量风险");
+      console.log(report.mergeRisks);
+      console.log(report.quantityRisks);
+      console.groupEnd();
+      console.groupCollapsed("读取错误与异常数据");
+      console.log(report.errors);
+      console.groupEnd();
+      if (report.health.safeForAutomaticSync) console.info(report.health.recommendation);
+      else console.warn(report.health.recommendation);
+      console.info("审计仅执行远程 GET：未写 localStorage、未调用 saveRecords、未推送 Gist。未输出 Token。");
+      console.groupEnd();
+      return report;
     }
 
     function markLocalDataChanged() {
