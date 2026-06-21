@@ -1,4 +1,4 @@
-const CACHE_NAME = "dotlog-v1.3.6-date-page-swipe-gap-easing";
+const CACHE_NAME = "dotlog-v1.3.7-menu-sheet-button-polish";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (event) => {
