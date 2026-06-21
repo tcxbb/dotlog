@@ -3260,6 +3260,375 @@
         .filter(Boolean))];
     }
 
+    function auditDotlogMigrationState() {
+      const dateKeyPattern = /^time_tracker_(\d{4}-\d{2}-\d{2})$/;
+      const cleanString = (value) => typeof value === "string" ? value.trim() : "";
+      const addToIndex = (index, key, value) => {
+        if (!key) return;
+        if (!index.has(key)) index.set(key, []);
+        index.get(key).push(value);
+      };
+      const recordLocation = (date, index, record) => ({
+        date,
+        index,
+        id: cleanString(record?.id) || null,
+        startTime: cleanString(record?.startTime) || null,
+        time: cleanString(record?.time) || null,
+        text: cleanString(record?.text) || null,
+        category: cleanString(record?.category) || null,
+        tags: Array.isArray(record?.tags) ? [...record.tags] : []
+      });
+
+      const storageErrors = [];
+      const dateEntries = [];
+      for (let index = 0; index < localStorage.length; index += 1) {
+        const key = localStorage.key(index);
+        const match = key?.match(dateKeyPattern);
+        if (!match) continue;
+
+        try {
+          const parsed = JSON.parse(localStorage.getItem(key));
+          if (!Array.isArray(parsed)) {
+            storageErrors.push({ key, error: "记录数据不是数组" });
+            dateEntries.push({ key, date: match[1], records: [] });
+            continue;
+          }
+          dateEntries.push({ key, date: match[1], records: parsed });
+        } catch (error) {
+          storageErrors.push({ key, error: error instanceof Error ? error.message : String(error) });
+          dateEntries.push({ key, date: match[1], records: [] });
+        }
+      }
+      dateEntries.sort((left, right) => left.date.localeCompare(right.date));
+
+      let configError = null;
+      let rawCategoryConfig = null;
+      const storedCategoryConfig = localStorage.getItem("category_config");
+      if (storedCategoryConfig) {
+        try {
+          rawCategoryConfig = JSON.parse(storedCategoryConfig);
+        } catch (error) {
+          configError = error instanceof Error ? error.message : String(error);
+        }
+      } else {
+        configError = "category_config 不存在";
+      }
+
+      const categoryById = new Map();
+      const categoryByName = new Map();
+      const tagById = new Map();
+      const tagByName = new Map();
+      const categories = Array.isArray(rawCategoryConfig?.categories)
+        ? rawCategoryConfig.categories
+        : [];
+
+      categories.forEach((category, categoryIndex) => {
+        if (!category || typeof category !== "object") return;
+        const categoryRef = {
+          id: cleanString(category.id) || null,
+          name: cleanString(category.name) || null,
+          categoryIndex,
+          tags: []
+        };
+        addToIndex(categoryById, categoryRef.id, categoryRef);
+        addToIndex(categoryByName, categoryRef.name, categoryRef);
+
+        if (!Array.isArray(category.tags)) return;
+        category.tags.forEach((tag, tagIndex) => {
+          const tagRef = {
+            id: cleanString(tag?.id) || null,
+            name: cleanString(typeof tag === "string" ? tag : tag?.name) || null,
+            categoryId: categoryRef.id,
+            categoryName: categoryRef.name,
+            categoryIndex,
+            tagIndex
+          };
+          categoryRef.tags.push(tagRef);
+          addToIndex(tagById, tagRef.id, tagRef);
+          addToIndex(tagByName, tagRef.name, tagRef);
+        });
+      });
+
+      const duplicateConfigEntries = (index) => [...index.entries()]
+        .filter(([, matches]) => matches.length > 1)
+        .map(([value, matches]) => ({ value, matches }));
+
+      const report = {
+        generatedAt: new Date().toISOString(),
+        readOnly: true,
+        overview: {
+          dateCount: dateEntries.length,
+          recordCount: dateEntries.reduce((total, entry) => total + entry.records.length, 0),
+          recordsPerDate: dateEntries.map((entry) => ({ date: entry.date, count: entry.records.length }))
+        },
+        recordIds: {
+          missing: 0,
+          legacy: 0,
+          uuid: 0,
+          abnormal: 0,
+          missingRecords: [],
+          abnormalRecords: [],
+          duplicates: []
+        },
+        categories: {
+          withValidCategoryId: 0,
+          withUnknownCategoryId: 0,
+          withoutCategoryIdWithName: 0,
+          withoutCategoryIdAndName: 0,
+          matchableByUniqueName: 0,
+          unknownCategoryIdsRecoverableByName: 0,
+          unknownCategoryIds: [],
+          unmatchedNames: [],
+          ambiguousNames: [],
+          duplicateConfigIds: duplicateConfigEntries(categoryById),
+          duplicateConfigNames: duplicateConfigEntries(categoryByName)
+        },
+        tags: {
+          withAllValidTagIds: 0,
+          withSomeUnknownTagIds: 0,
+          withoutTagIdsWithNames: 0,
+          withoutTagIdsAndNames: 0,
+          recordsMatchableByUniqueNames: 0,
+          tagNamesMatchableByUniqueName: 0,
+          unknownTagIdsRecoverableByNames: 0,
+          unknownTagIds: [],
+          unmatchedNames: [],
+          ambiguousNames: [],
+          duplicateConfigIds: duplicateConfigEntries(tagById),
+          duplicateConfigNames: duplicateConfigEntries(tagByName)
+        },
+        risks: {
+          sparseDateRule: "记录数不超过 max(3, 每日记录数中位数的 25%)",
+          sparseDateThreshold: 3,
+          sparseDates: [],
+          missingIdMayDuplicateAcrossDevices: false,
+          suspectedSameDayDuplicates: [],
+          unsafeMigrationRecords: []
+        },
+        errors: {
+          categoryConfig: configError,
+          storage: storageErrors,
+          invalidRecords: []
+        }
+      };
+
+      const recordIdOccurrences = new Map();
+      const unsafeMigrationRecords = new Map();
+      const markUnsafe = (location, reason) => {
+        const key = `${location.date}:${location.index}`;
+        if (!unsafeMigrationRecords.has(key)) {
+          unsafeMigrationRecords.set(key, { ...location, reasons: [] });
+        }
+        unsafeMigrationRecords.get(key).reasons.push(reason);
+      };
+
+      dateEntries.forEach(({ date, records }) => {
+        const fingerprints = new Map();
+
+        records.forEach((record, index) => {
+          const location = recordLocation(date, index, record);
+          if (!record || typeof record !== "object" || Array.isArray(record)) {
+            report.errors.invalidRecords.push({ ...location, error: "记录不是对象" });
+          }
+
+          const recordId = cleanString(record?.id);
+          if (!recordId) {
+            report.recordIds.missing += 1;
+            report.recordIds.missingRecords.push(location);
+          } else {
+            addToIndex(recordIdOccurrences, recordId, location);
+            if (recordId.startsWith("rec_legacy_")) {
+              report.recordIds.legacy += 1;
+            } else if (/^rec_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(recordId)) {
+              report.recordIds.uuid += 1;
+            } else {
+              report.recordIds.abnormal += 1;
+              report.recordIds.abnormalRecords.push(location);
+            }
+          }
+
+          const categoryId = cleanString(record?.categoryId);
+          const categoryName = cleanString(record?.category);
+          let resolvedCategory = null;
+          if (categoryId) {
+            const idMatches = categoryById.get(categoryId) || [];
+            if (idMatches.length === 1) {
+              report.categories.withValidCategoryId += 1;
+              resolvedCategory = idMatches[0];
+            } else {
+              report.categories.withUnknownCategoryId += 1;
+              const nameMatches = categoryName ? categoryByName.get(categoryName) || [] : [];
+              const unknownCategoryId = {
+                ...location,
+                categoryId,
+                reason: idMatches.length > 1 ? "配置中存在重复 categoryId" : "配置中找不到 categoryId",
+                fallbackCategoryId: nameMatches.length === 1 ? nameMatches[0].id : null
+              };
+              report.categories.unknownCategoryIds.push(unknownCategoryId);
+              if (nameMatches.length === 1) {
+                report.categories.matchableByUniqueName += 1;
+                report.categories.unknownCategoryIdsRecoverableByName += 1;
+                resolvedCategory = nameMatches[0];
+              } else if (categoryName && nameMatches.length === 0) {
+                report.categories.unmatchedNames.push(location);
+                markUnsafe(location, `categoryId 与分类名称都无法匹配：${categoryId} / ${categoryName}`);
+              } else if (categoryName && nameMatches.length > 1) {
+                report.categories.ambiguousNames.push({ ...location, candidates: nameMatches });
+                markUnsafe(location, `categoryId 无效且分类名称存在歧义：${categoryName}`);
+              } else {
+                markUnsafe(location, `categoryId 无法唯一解析且没有名称兜底：${categoryId}`);
+              }
+            }
+          } else if (categoryName) {
+            report.categories.withoutCategoryIdWithName += 1;
+            const nameMatches = categoryByName.get(categoryName) || [];
+            if (nameMatches.length === 1) {
+              report.categories.matchableByUniqueName += 1;
+              resolvedCategory = nameMatches[0];
+            } else if (nameMatches.length === 0) {
+              report.categories.unmatchedNames.push(location);
+              markUnsafe(location, `分类名称无法匹配：${categoryName}`);
+            } else {
+              report.categories.ambiguousNames.push({ ...location, candidates: nameMatches });
+              markUnsafe(location, `分类名称存在歧义：${categoryName}`);
+            }
+          } else {
+            report.categories.withoutCategoryIdAndName += 1;
+          }
+
+          const tagIds = Array.isArray(record?.tagIds)
+            ? record.tagIds.map(cleanString).filter(Boolean)
+            : [];
+          const tagNames = Array.isArray(record?.tags)
+            ? record.tags.map(cleanString).filter(Boolean)
+            : [];
+
+          const auditTagNameFallback = () => {
+            if (tagNames.length === 0) return false;
+            let allNamesMatchUniquely = true;
+            tagNames.forEach((tagName) => {
+              const matches = resolvedCategory
+                ? resolvedCategory.tags.filter((tag) => tag.name === tagName)
+                : (tagByName.get(tagName) || []);
+              if (matches.length === 1) {
+                report.tags.tagNamesMatchableByUniqueName += 1;
+              } else if (matches.length === 0) {
+                allNamesMatchUniquely = false;
+                report.tags.unmatchedNames.push({ ...location, tagName });
+                markUnsafe(location, `标签名称无法匹配：${tagName}`);
+              } else {
+                allNamesMatchUniquely = false;
+                report.tags.ambiguousNames.push({ ...location, tagName, candidates: matches });
+                markUnsafe(location, `标签名称存在歧义：${tagName}`);
+              }
+            });
+            if (allNamesMatchUniquely) {
+              report.tags.recordsMatchableByUniqueNames += 1;
+            }
+            return allNamesMatchUniquely;
+          };
+
+          if (tagIds.length > 0) {
+            const unresolvedTagIds = tagIds.filter((tagId) => (tagById.get(tagId) || []).length !== 1);
+            if (unresolvedTagIds.length === 0) {
+              report.tags.withAllValidTagIds += 1;
+            } else {
+              report.tags.withSomeUnknownTagIds += 1;
+              report.tags.unknownTagIds.push({ ...location, tagIds: unresolvedTagIds });
+              if (auditTagNameFallback()) {
+                report.tags.unknownTagIdsRecoverableByNames += 1;
+              } else if (tagNames.length === 0) {
+                markUnsafe(location, `tagIds 无法解析且没有名称兜底：${unresolvedTagIds.join(", ")}`);
+              }
+            }
+          } else if (tagNames.length > 0) {
+            report.tags.withoutTagIdsWithNames += 1;
+            auditTagNameFallback();
+          } else {
+            report.tags.withoutTagIdsAndNames += 1;
+          }
+
+          const duplicateFingerprint = [
+            cleanString(record?.startTime),
+            cleanString(record?.time),
+            cleanString(record?.text).replace(/\s+/g, " ").toLowerCase()
+          ].join("|");
+          if (duplicateFingerprint !== "||") {
+            addToIndex(fingerprints, duplicateFingerprint, location);
+          }
+        });
+
+        [...fingerprints.entries()]
+          .filter(([, matches]) => matches.length > 1)
+          .forEach(([fingerprint, matches]) => {
+            report.risks.suspectedSameDayDuplicates.push({ date, fingerprint, matches });
+          });
+      });
+
+      report.recordIds.duplicates = [...recordIdOccurrences.entries()]
+        .filter(([, matches]) => matches.length > 1)
+        .map(([id, matches]) => ({ id, matches }));
+
+      const dailyCounts = report.overview.recordsPerDate.map(({ count }) => count).sort((a, b) => a - b);
+      const middle = Math.floor(dailyCounts.length / 2);
+      const median = dailyCounts.length === 0
+        ? 0
+        : dailyCounts.length % 2 === 1
+          ? dailyCounts[middle]
+          : (dailyCounts[middle - 1] + dailyCounts[middle]) / 2;
+      report.risks.sparseDateThreshold = Math.max(3, Math.floor(median * 0.25));
+      report.risks.sparseDates = report.overview.recordsPerDate
+        .filter(({ count }) => count <= report.risks.sparseDateThreshold);
+      report.risks.missingIdMayDuplicateAcrossDevices = report.recordIds.missing > 0;
+      report.risks.unsafeMigrationRecords = [...unsafeMigrationRecords.values()];
+
+      window.__dotlogMigrationAudit = report;
+      console.group("[Dotlog] 旧数据与同步迁移只读审计");
+      console.log("审计报告对象：window.__dotlogMigrationAudit", report);
+      console.table([{
+        日期数量: report.overview.dateCount,
+        记录总数: report.overview.recordCount,
+        缺少记录ID: report.recordIds.missing,
+        旧版记录ID: report.recordIds.legacy,
+        UUID记录ID: report.recordIds.uuid,
+        异常记录ID: report.recordIds.abnormal
+      }]);
+      console.groupCollapsed("每日记录数量");
+      console.table(report.overview.recordsPerDate);
+      console.groupEnd();
+      console.groupCollapsed("分类 ID 状态");
+      console.table([{
+        ID有效: report.categories.withValidCategoryId,
+        ID无法解析: report.categories.withUnknownCategoryId,
+        无ID但有名称: report.categories.withoutCategoryIdWithName,
+        无ID且无名称: report.categories.withoutCategoryIdAndName,
+        名称可唯一匹配: report.categories.matchableByUniqueName,
+        无效ID可由名称恢复: report.categories.unknownCategoryIdsRecoverableByName
+      }]);
+      console.log(report.categories);
+      console.groupEnd();
+      console.groupCollapsed("标签 ID 状态");
+      console.table([{
+        ID全部有效: report.tags.withAllValidTagIds,
+        ID部分无效: report.tags.withSomeUnknownTagIds,
+        无ID但有名称: report.tags.withoutTagIdsWithNames,
+        无ID且无名称: report.tags.withoutTagIdsAndNames,
+        名称可唯一匹配的记录: report.tags.recordsMatchableByUniqueNames,
+        无效ID可由名称恢复: report.tags.unknownTagIdsRecoverableByNames
+      }]);
+      console.log(report.tags);
+      console.groupEnd();
+      console.groupCollapsed("同步与迁移风险");
+      console.log(report.risks);
+      console.groupEnd();
+      if (configError || storageErrors.length || report.errors.invalidRecords.length) {
+        console.warn("审计发现无法正常解析的数据", report.errors);
+      }
+      console.info("审计为只读操作：未保存记录、未补 ID、未触发同步。");
+      console.groupEnd();
+      return report;
+    }
+
     function mapTagIdsByName(tags, tagIds) {
       const tagIdMap = new Map();
       if (!Array.isArray(tags)) return tagIdMap;
