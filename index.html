@@ -6612,6 +6612,7 @@
     function insertNewRecords(date, newRecords) {
       const resolvedNewRecords = newRecords.map((record) => ({
         ...record,
+        id: normalizeReferenceId(record.id) || createStableId("rec"),
         ...resolveClassificationFields(record)
       }));
       const records = sortRecords([...resolvedNewRecords, ...loadRecords(date)]);
