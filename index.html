@@ -2780,17 +2780,116 @@
       { value: "#8B8BC8", label: "薰衣草" }
     ];
 
+    const dataSchemaVersion = 1;
+
     const defaultCategoryConfig = {
+      schemaVersion: dataSchemaVersion,
       categories: [
-        { name: "睡眠", color: "#7B8EC8", tags: ["午睡", "入睡困难", "睡眠不足"] },
-        { name: "生活维护", color: "#8DC88B", tags: ["饮食", "个人护理", "家务", "采购", "医疗健康", "宠物照顾", "杂务处理"] },
-        { name: "身体训练", color: "#E8A87C", tags: ["八段锦", "力量训练", "跑步", "散步", "跳操跟练", "瑜伽", "拉伸"] },
-        { name: "输入", color: "#6BB5D5", tags: ["阅读", "课程学习", "播客/音频", "灵感采集"] },
-        { name: "输出", color: "#D56B9A", tags: ["写作", "日记", "复盘", "知识整理", "内容创作"] },
-        { name: "工作项目", color: "#C87B7B", tags: ["项目执行", "研究分析", "沟通协作"] },
-        { name: "Meta work", color: "#A57BC8", tags: ["时间管理", "知识管理", "流程优化", "自我认知"] },
-        { name: "娱乐休闲", color: "#C8C87B", tags: ["社交媒体", "影视娱乐", "听休闲播客", "玩游戏", "外出休闲", "碎片休闲"] },
-        { name: "黑洞时间", color: "#B0B0B0", tags: ["拖延", "无目的优化", "无意识刷手机"] }
+        {
+          id: "cat_sleep",
+          name: "睡眠",
+          color: "#7B8EC8",
+          tags: [
+            { id: "tag_sleep_nap", name: "午睡" },
+            { id: "tag_sleep_difficulty", name: "入睡困难" },
+            { id: "tag_sleep_insufficient", name: "睡眠不足" }
+          ]
+        },
+        {
+          id: "cat_life",
+          name: "生活维护",
+          color: "#8DC88B",
+          tags: [
+            { id: "tag_life_food", name: "饮食" },
+            { id: "tag_life_personal_care", name: "个人护理" },
+            { id: "tag_life_housework", name: "家务" },
+            { id: "tag_life_shopping", name: "采购" },
+            { id: "tag_life_health", name: "医疗健康" },
+            { id: "tag_life_pet_care", name: "宠物照顾" },
+            { id: "tag_life_errands", name: "杂务处理" }
+          ]
+        },
+        {
+          id: "cat_training",
+          name: "身体训练",
+          color: "#E8A87C",
+          tags: [
+            { id: "tag_training_baduanjin", name: "八段锦" },
+            { id: "tag_training_strength", name: "力量训练" },
+            { id: "tag_training_running", name: "跑步" },
+            { id: "tag_training_walking", name: "散步" },
+            { id: "tag_training_workout_video", name: "跳操跟练" },
+            { id: "tag_training_yoga", name: "瑜伽" },
+            { id: "tag_training_stretching", name: "拉伸" }
+          ]
+        },
+        {
+          id: "cat_input",
+          name: "输入",
+          color: "#6BB5D5",
+          tags: [
+            { id: "tag_input_reading", name: "阅读" },
+            { id: "tag_input_courses", name: "课程学习" },
+            { id: "tag_input_podcast", name: "播客/音频" },
+            { id: "tag_input_inspiration", name: "灵感采集" }
+          ]
+        },
+        {
+          id: "cat_output",
+          name: "输出",
+          color: "#D56B9A",
+          tags: [
+            { id: "tag_output_writing", name: "写作" },
+            { id: "tag_output_journal", name: "日记" },
+            { id: "tag_output_review", name: "复盘" },
+            { id: "tag_output_knowledge", name: "知识整理" },
+            { id: "tag_output_content", name: "内容创作" }
+          ]
+        },
+        {
+          id: "cat_work",
+          name: "工作项目",
+          color: "#C87B7B",
+          tags: [
+            { id: "tag_work_execution", name: "项目执行" },
+            { id: "tag_work_research", name: "研究分析" },
+            { id: "tag_work_collaboration", name: "沟通协作" }
+          ]
+        },
+        {
+          id: "cat_meta",
+          name: "Meta work",
+          color: "#A57BC8",
+          tags: [
+            { id: "tag_meta_time_management", name: "时间管理" },
+            { id: "tag_meta_knowledge_management", name: "知识管理" },
+            { id: "tag_meta_process_optimization", name: "流程优化" },
+            { id: "tag_meta_self_awareness", name: "自我认知" }
+          ]
+        },
+        {
+          id: "cat_leisure",
+          name: "娱乐休闲",
+          color: "#C8C87B",
+          tags: [
+            { id: "tag_leisure_social_media", name: "社交媒体" },
+            { id: "tag_leisure_screen", name: "影视娱乐" },
+            { id: "tag_leisure_podcast", name: "听休闲播客" },
+            { id: "tag_leisure_gaming", name: "玩游戏" },
+            { id: "tag_leisure_outings", name: "外出休闲" },
+            { id: "tag_leisure_micro_breaks", name: "碎片休闲" }
+          ]
+        },
+        {
+          id: "cat_blackhole",
+          name: "黑洞时间",
+          color: "#B0B0B0",
+          tags: [
+            { id: "tag_blackhole_procrastination", name: "拖延" },
+            { id: "tag_blackhole_optimization", name: "无目的优化" },
+            { id: "tag_blackhole_phone", name: "无意识刷手机" }
+          ]
+        }
       ]
     };
 
@@ -2940,9 +3039,67 @@
       return JSON.parse(JSON.stringify(defaultCategoryConfig));
     }
 
-    function normalizeTagConfig(tag) {
+    function getDefaultCategoryId(categoryName) {
+      return defaultCategoryConfig.categories.find((category) => category.name === categoryName)?.id || null;
+    }
+
+    function getDefaultTagId(categoryName, tagName) {
+      const category = defaultCategoryConfig.categories.find((item) => item.name === categoryName);
+      return category?.tags.find((tag) => tag.name === tagName)?.id || null;
+    }
+
+    function createStableId(prefix) {
+      const value = globalThis.crypto?.randomUUID
+        ? globalThis.crypto.randomUUID()
+        : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+      return `${prefix}_${value}`;
+    }
+
+    function stableStringHash(value, seed = 2166136261) {
+      let hash = seed >>> 0;
+      for (let index = 0; index < value.length; index += 1) {
+        hash ^= value.charCodeAt(index);
+        hash = Math.imul(hash, 16777619);
+      }
+      return (hash >>> 0).toString(36);
+    }
+
+    function legacyRecordFingerprint(record) {
+      return JSON.stringify({
+        time: record.time || null,
+        startTime: record.startTime || null,
+        text: record.text || null,
+        category: record.category || null,
+        note: record.note || null,
+        tags: Array.isArray(record.tags) ? record.tags : [],
+        isBackfill: record.isBackfill || false,
+        isSplit: record.isSplit || false
+      });
+    }
+
+    function createLegacyRecordId(record, identityHint = "") {
+      const fingerprint = `${identityHint}|${legacyRecordFingerprint(record)}`;
+      return `rec_legacy_${stableStringHash(fingerprint)}_${stableStringHash(fingerprint, 3339675911)}`;
+    }
+
+    function normalizeStableId(value, prefix, usedIds = null) {
+      let id = typeof value === "string" ? value.trim() : "";
+      if (!id || usedIds?.has(id)) {
+        do {
+          id = createStableId(prefix);
+        } while (usedIds?.has(id));
+      }
+      usedIds?.add(id);
+      return id;
+    }
+
+    function normalizeTagConfig(tag, usedTagIds = null, fallbackId = null) {
       if (typeof tag === "string") {
-        return { name: tag, triggers: [] };
+        return {
+          id: normalizeStableId(fallbackId, "tag", usedTagIds),
+          name: tag,
+          triggers: []
+        };
       }
 
       if (!tag || typeof tag !== "object" || !tag.name) return null;
@@ -2952,6 +3109,8 @@
         : (Array.isArray(tag.keywords) ? tag.keywords : []);
 
       return {
+        ...tag,
+        id: normalizeStableId(tag.id || fallbackId, "tag", usedTagIds),
         name: String(tag.name),
         triggers: [...new Set(triggers.map((trigger) => String(trigger).trim()).filter(Boolean))]
       };
@@ -2961,15 +3120,26 @@
       const source = config && Array.isArray(config.categories)
         ? config
         : cloneDefaultCategoryConfig();
+      const usedCategoryIds = new Set();
+      const usedTagIds = new Set();
 
       return {
+        ...source,
+        schemaVersion: Number.isInteger(source.schemaVersion)
+          ? Math.max(source.schemaVersion, dataSchemaVersion)
+          : dataSchemaVersion,
         categories: source.categories
           .filter((category) => category && category.name && category.color)
           .map((category) => ({
+            ...category,
+            id: normalizeStableId(category.id || getDefaultCategoryId(category.name), "cat", usedCategoryIds),
             name: String(category.name),
             color: String(category.color),
             tags: Array.isArray(category.tags)
-              ? category.tags.map(normalizeTagConfig).filter(Boolean)
+              ? category.tags.map((tag) => {
+                const tagName = typeof tag === "string" ? tag : tag?.name;
+                return normalizeTagConfig(tag, usedTagIds, getDefaultTagId(category.name, tagName));
+              }).filter(Boolean)
               : []
           }))
       };
@@ -2984,7 +3154,13 @@
       }
 
       try {
-        return normalizeCategoryConfig(JSON.parse(storedConfig));
+        const normalizedConfig = normalizeCategoryConfig(JSON.parse(storedConfig));
+        const normalizedValue = JSON.stringify(normalizedConfig);
+        if (normalizedValue !== storedConfig) {
+          localStorage.setItem("category_config", normalizedValue);
+          markLocalDataChanged();
+        }
+        return normalizedConfig;
       } catch {
         const defaultConfig = cloneDefaultCategoryConfig();
         saveCategoryConfig(defaultConfig);
@@ -3001,8 +3177,33 @@
       return loadCategoryConfig().categories;
     }
 
-    function findCategory(categoryName) {
+    function findCategoryById(categoryId) {
+      return getCategories().find((category) => category.id === categoryId);
+    }
+
+    function findCategoryByName(categoryName) {
       return getCategories().find((category) => category.name === categoryName);
+    }
+
+    function getAllTagsWithCategory() {
+      return getCategories().flatMap((category) => (
+        category.tags.map((tag) => ({ category, tag }))
+      ));
+    }
+
+    function findTagById(tagId) {
+      return getAllTagsWithCategory().find(({ tag }) => tag.id === tagId) || null;
+    }
+
+    function findTagByName(categoryName, tagName) {
+      const category = findCategoryByName(categoryName);
+      if (!category) return null;
+      const tag = category.tags.find((item) => item.name === tagName);
+      return tag ? { category, tag } : null;
+    }
+
+    function findCategory(categoryName) {
+      return findCategoryByName(categoryName);
     }
 
     function getCategoryTags(categoryName) {
@@ -3214,6 +3415,10 @@
 
     function normalizeRecord(record) {
       return {
+        ...record,
+        id: typeof record.id === "string" && record.id.trim()
+          ? record.id.trim()
+          : createLegacyRecordId(record),
         time: record.time,
         startTime: isValidTimeInput(record.startTime || "") ? record.startTime : null,
         text: record.text,
@@ -3223,6 +3428,21 @@
         isBackfill: record.isBackfill || false,
         isSplit: record.isSplit || false
       };
+    }
+
+    function normalizeRecordList(records, identityScope = "") {
+      const occurrenceByFingerprint = new Map();
+      return records.map((record) => {
+        if (typeof record.id === "string" && record.id.trim()) return normalizeRecord(record);
+
+        const fingerprint = legacyRecordFingerprint(record);
+        const occurrence = occurrenceByFingerprint.get(fingerprint) || 0;
+        occurrenceByFingerprint.set(fingerprint, occurrence + 1);
+        return normalizeRecord({
+          ...record,
+          id: createLegacyRecordId(record, `${identityScope}:${occurrence}`)
+        });
+      });
     }
 
     function getLocalUpdatedAt() {
@@ -3239,7 +3459,12 @@
         const dateKey = key.replace("time_tracker_", "");
         try {
           const value = JSON.parse(localStorage.getItem(key)) || [];
-          records[dateKey] = sortRecords(value.map(normalizeRecord));
+          const normalizedRecords = sortRecords(normalizeRecordList(value, dateKey));
+          records[dateKey] = normalizedRecords;
+          const normalizedValue = JSON.stringify(normalizedRecords);
+          if (normalizedValue !== localStorage.getItem(key)) {
+            localStorage.setItem(key, normalizedValue);
+          }
         } catch {
           records[dateKey] = [];
         }
@@ -3286,7 +3511,7 @@
         keysToRemove.forEach((key) => localStorage.removeItem(key));
 
         Object.entries(data.records || {}).forEach(([dateKey, records]) => {
-          localStorage.setItem(`time_tracker_${dateKey}`, JSON.stringify(sortRecords((records || []).map(normalizeRecord))));
+          localStorage.setItem(`time_tracker_${dateKey}`, JSON.stringify(sortRecords(normalizeRecordList(records || [], dateKey))));
         });
 
         const remoteSettings = getSettingsFromGistData(data);
@@ -3474,8 +3699,15 @@
 
     function loadRecords(date) {
       try {
-        const records = JSON.parse(localStorage.getItem(storageKey(date))) || [];
-        return records.map(normalizeRecord);
+        const key = storageKey(date);
+        const storedValue = localStorage.getItem(key);
+        const records = JSON.parse(storedValue) || [];
+        const normalizedRecords = normalizeRecordList(records, formatDateKey(date));
+        const normalizedValue = JSON.stringify(normalizedRecords);
+        if (normalizedValue !== storedValue) {
+          localStorage.setItem(key, normalizedValue);
+        }
+        return normalizedRecords;
       } catch {
         return [];
       }
@@ -3545,7 +3777,8 @@
     }
 
     function saveRecords(date, records) {
-      localStorage.setItem(storageKey(date), JSON.stringify(records));
+      const normalizedRecords = normalizeRecordList(records, formatDateKey(date));
+      localStorage.setItem(storageKey(date), JSON.stringify(normalizedRecords));
       markLocalDataChanged();
     }
 
@@ -4588,6 +4821,7 @@
       }
 
       records[index] = {
+        id: original.id,
         startTime: editDraft.startTime,
         time: editDraft.time,
         text: editDraft.text.trim(),

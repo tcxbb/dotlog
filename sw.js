@@ -1,4 +1,4 @@
-const CACHE_NAME = "dotlog-v1.3.7-menu-sheet-button-polish";
+const CACHE_NAME = "dotlog-v1.3.8-data-model-ids";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (event) => {
