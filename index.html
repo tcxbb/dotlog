@@ -5487,13 +5487,69 @@
       target.dispatchEvent(new Event("input", { bubbles: true }));
     }
 
+    function validateEditedRecordInterval(date, records, index, startTime, endTime) {
+      const originalInterval = getRecordInterval(records, index, date);
+      if (!originalInterval) return false;
+
+      const dateTimeAt = (targetDate, time) => {
+        const [hours, minutes] = time.split(":").map(Number);
+        return new Date(
+          targetDate.getFullYear(),
+          targetDate.getMonth(),
+          targetDate.getDate(),
+          hours,
+          minutes,
+          0,
+          0
+        );
+      };
+
+      const startMinutes = timeToMinutes(startTime);
+      const endMinutes = timeToMinutes(endTime);
+      const isCrossDay = originalInterval.isCrossDay || startMinutes > endMinutes;
+      const startDate = isCrossDay ? addDays(date, -1) : date;
+      const startDateTime = dateTimeAt(startDate, startTime);
+      const endDateTime = dateTimeAt(date, endTime);
+
+      if (startDateTime > endDateTime) {
+        alert("开始时间不能晚于结束时间");
+        return false;
+      }
+
+      const previousRecord = index < records.length - 1
+        ? records[index + 1]
+        : getPreviousDayBoundary(date)?.record || null;
+      if (previousRecord) {
+        const previousEndDate = index < records.length - 1 ? date : addDays(date, -1);
+        const previousEndDateTime = dateTimeAt(previousEndDate, previousRecord.time);
+        if (startDateTime < previousEndDateTime) {
+          alert(`开始时间不能早于相邻记录结束时间 ${previousRecord.time}`);
+          return false;
+        }
+      }
+
+      const nextRecord = index > 0 ? records[index - 1] : null;
+      if (nextRecord?.startTime && isValidTimeInput(nextRecord.startTime)) {
+        const nextInterval = getRecordInterval(records, index - 1, date);
+        const nextStartDateTime = nextInterval
+          ? dateTimeAt(nextInterval.startDate, nextInterval.startTime)
+          : null;
+        if (nextStartDateTime && endDateTime > nextStartDateTime) {
+          alert(`结束时间不能晚于相邻记录开始时间 ${nextInterval.startTime}`);
+          return false;
+        }
+      }
+
+      return true;
+    }
+
     function saveEditedRecord(index) {
       if (!editDraft || !isValidTimeInput(editDraft.startTime) || !isValidTimeInput(editDraft.time) || !editDraft.text.trim()) return;
-      if (!validateEntryInterval(viewedDate, editDraft.startTime, editDraft.time)) return;
 
       const records = loadRecords(viewedDate);
       const original = records[index];
       if (!original) return;
+      if (!validateEditedRecordInterval(viewedDate, records, index, editDraft.startTime, editDraft.time)) return;
 
       const timeChanged = editDraft.time !== original.time;
       const hasSameTime = records.some((record, recordIndex) => recordIndex !== index && record.time === editDraft.time);
