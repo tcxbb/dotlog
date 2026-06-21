@@ -2650,8 +2650,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
-    const APP_VERSION = "v1.4.5";
-    const APP_BUILD_TIME = "2026-06-21 23:50";
+    const APP_VERSION = "v1.4.6";
+    const APP_BUILD_TIME = "2026-06-22 00:04";
 
     const entryForm = document.querySelector("#entryForm");
     const entryInput = document.querySelector("#entryInput");
@@ -5867,21 +5867,83 @@
       render();
     }
 
-    function saveEditedCategoryName(index, input, originalName) {
+    function inspectStoredRecordReferences(category, tag = null) {
+      const categoryReferences = [];
+      const tagReferences = [];
+      const errors = [];
+      const targetTags = tag ? [tag] : (Array.isArray(category.tags) ? category.tags : []);
+      const targetTagIds = new Set(targetTags.map((item) => item?.id).filter(Boolean));
+      const targetTagNames = new Set(targetTags.map((item) => item?.name).filter(Boolean));
+
+      for (let storageIndex = 0; storageIndex < localStorage.length; storageIndex += 1) {
+        const key = localStorage.key(storageIndex);
+        if (!key || !/^time_tracker_\d{4}-\d{2}-\d{2}$/.test(key)) continue;
+
+        try {
+          const records = JSON.parse(localStorage.getItem(key));
+          if (!Array.isArray(records)) {
+            errors.push({ key, reason: "记录数据不是数组" });
+            continue;
+          }
+
+          records.forEach((record, recordIndex) => {
+            if (!record || typeof record !== "object" || Array.isArray(record)) {
+              errors.push({ key, recordIndex, reason: "记录不是对象" });
+              return;
+            }
+
+            const location = {
+              key,
+              recordIndex,
+              recordId: normalizeReferenceId(record.id)
+            };
+            const recordCategoryId = normalizeReferenceId(record.categoryId);
+            const recordCategoryName = typeof record.category === "string" ? record.category.trim() : "";
+            const categoryReferenced = recordCategoryId === category.id
+              || recordCategoryName === category.name;
+            if (categoryReferenced) categoryReferences.push(location);
+
+            const tagIds = Array.isArray(record.tagIds)
+              ? record.tagIds.map((tagId) => normalizeReferenceId(tagId)).filter(Boolean)
+              : [];
+            const tagNames = Array.isArray(record.tags)
+              ? record.tags.map((tagName) => String(tagName).trim()).filter(Boolean)
+              : [];
+            const hasCategoryContext = Boolean(recordCategoryId || recordCategoryName);
+            const tagReferenced = tagIds.some((tagId) => targetTagIds.has(tagId))
+              || (tagNames.some((tagName) => targetTagNames.has(tagName))
+                && (categoryReferenced || !hasCategoryContext));
+            if (tagReferenced) tagReferences.push(location);
+          });
+        } catch (error) {
+          errors.push({
+            key,
+            reason: error instanceof Error ? error.message : String(error)
+          });
+        }
+      }
+
+      return { categoryReferences, tagReferences, errors };
+    }
+
+    function saveEditedCategoryName(categoryId, input, originalName) {
       const nextName = input.value.trim();
       if (!nextName) {
         input.value = originalName;
         return;
       }
 
-      if (categoryNameExists(nextName, index)) {
+      const config = loadCategoryConfig();
+      const category = config.categories.find((item) => item.id === categoryId);
+      if (!category) return;
+
+      if (config.categories.some((item) => item.id !== categoryId && item.name === nextName)) {
         alert("分类名称已存在");
         input.value = originalName;
         return;
       }
 
-      const config = loadCategoryConfig();
-      config.categories[index].name = nextName;
+      category.name = nextName;
       saveCategoryConfig(config);
       editingCategoryIndex = null;
       renderSettingsPage();
@@ -5918,16 +5980,33 @@
       return input;
     }
 
-    function deleteCategory(index) {
+    function deleteCategory(categoryId) {
       const config = loadCategoryConfig();
-      const category = config.categories[index];
+      const categoryIndex = config.categories.findIndex((item) => item.id === categoryId);
+      const category = config.categories[categoryIndex];
       if (!category) return;
 
-      if (!confirm(`确认删除分类「${category.name}」？\n该分类下的所有标签也将一并删除。`)) {
+      if (category.tags.length > 0) {
+        alert(`分类「${category.name}」下还有 ${category.tags.length} 个标签，请先处理这些标签。`);
         return;
       }
 
-      config.categories.splice(index, 1);
+      const usage = inspectStoredRecordReferences(category);
+      if (usage.errors.length > 0) {
+        console.warn("[Dotlog] 历史记录引用检查失败，已阻止删除分类", usage.errors);
+        alert("部分历史记录无法读取，无法安全确认分类是否未被使用，已阻止删除。");
+        return;
+      }
+      if (usage.categoryReferences.length > 0 || usage.tagReferences.length > 0) {
+        alert(`分类「${category.name}」仍被历史记录使用，不能删除。`);
+        return;
+      }
+
+      if (!confirm(`确认删除分类「${category.name}」？`)) {
+        return;
+      }
+
+      config.categories.splice(categoryIndex, 1);
       saveCategoryConfig(config);
       editingCategoryIndex = null;
       addingTagCategoryIndex = null;
@@ -5955,7 +6034,7 @@
       renderSettingsPage();
     }
 
-    function updateTagName(categoryIndex, tagIndex, input, originalName) {
+    function updateTagName(categoryId, tagId, input, originalName) {
       const tagName = input.value.trim();
       if (!tagName) {
         input.value = originalName;
@@ -5963,16 +6042,17 @@
       }
 
       const config = loadCategoryConfig();
-      const category = config.categories[categoryIndex];
-      if (!category) return;
+      const category = config.categories.find((item) => item.id === categoryId);
+      const tag = category?.tags.find((item) => item.id === tagId);
+      if (!category || !tag) return;
 
-      if (category.tags.some((tag, index) => index !== tagIndex && tag.name === tagName)) {
+      if (category.tags.some((item) => item.id !== tagId && item.name === tagName)) {
         alert("标签已存在");
         input.value = originalName;
         return;
       }
 
-      category.tags[tagIndex].name = tagName;
+      tag.name = tagName;
       saveCategoryConfig(config);
       editingTag = null;
       renderSettingsPage();
@@ -5987,6 +6067,8 @@
       tagDetailDraft = {
         categoryIndex,
         tagIndex,
+        categoryId: category.id,
+        tagId: tag.id,
         name: tag.name,
         triggers: Array.isArray(tag.triggers) ? [...tag.triggers] : [],
         error: ""
@@ -6022,17 +6104,18 @@
       }
 
       const config = loadCategoryConfig();
-      const category = config.categories[tagDetailDraft.categoryIndex];
-      const tag = category?.tags[tagDetailDraft.tagIndex];
+      const originalCategory = config.categories.find((item) => item.id === tagDetailDraft.categoryId);
+      const category = originalCategory?.tags.some((tag) => tag.id === tagDetailDraft.tagId)
+        ? originalCategory
+        : config.categories.find((item) => item.tags.some((tag) => tag.id === tagDetailDraft.tagId));
+      const tag = category?.tags.find((item) => item.id === tagDetailDraft.tagId);
       if (!category || !tag) {
         tagDetailDraft.error = "标签不存在，请关闭后重试";
         renderSettingsPage();
         return;
       }
 
-      const duplicateName = category.tags.some((item, index) => (
-        index !== tagDetailDraft.tagIndex && item.name === name
-      ));
+      const duplicateName = category.tags.some((item) => item.id !== tag.id && item.name === name);
       if (duplicateName) {
         tagDetailDraft.error = "标签名称已存在";
         renderSettingsPage();
@@ -6205,13 +6288,26 @@
       return overlay;
     }
 
-    function deleteTag(categoryIndex, tagIndex) {
+    function deleteTag(categoryId, tagId) {
       const config = loadCategoryConfig();
-      const category = config.categories[categoryIndex];
+      const category = config.categories.find((item) => item.id === categoryId);
       if (!category) return;
 
+      const tagIndex = category.tags.findIndex((item) => item.id === tagId);
       const tag = category.tags[tagIndex];
-      if (tag === undefined || !confirm(`确认删除标签「${tag.name}」？`)) return;
+      if (!tag) return;
+
+      const usage = inspectStoredRecordReferences(category, tag);
+      if (usage.errors.length > 0) {
+        console.warn("[Dotlog] 历史记录引用检查失败，已阻止删除标签", usage.errors);
+        alert("部分历史记录无法读取，无法安全确认标签是否未被使用，已阻止删除。");
+        return;
+      }
+      if (usage.tagReferences.length > 0) {
+        alert(`标签「${tag.name}」仍被 ${usage.tagReferences.length} 条历史记录使用，不能删除。`);
+        return;
+      }
+      if (!confirm(`确认删除标签「${tag.name}」？`)) return;
 
       category.tags.splice(tagIndex, 1);
       saveCategoryConfig(config);
@@ -6300,7 +6396,7 @@
       if (editingCategoryIndex === categoryIndex) {
         nameWrap.append(createInlineInput(
           category.name,
-          (input) => saveEditedCategoryName(categoryIndex, input, category.name),
+          (input) => saveEditedCategoryName(category.id, input, category.name),
           () => {
             editingCategoryIndex = null;
             renderSettingsPage();
@@ -6361,7 +6457,7 @@
         deleteButton.textContent = "删除分类";
         deleteButton.addEventListener("click", () => {
           openCategoryActionMenuIndex = null;
-          deleteCategory(categoryIndex);
+          deleteCategory(category.id);
         });
         menu.append(editButton, deleteButton);
         categoryMenuWrap.append(menu);
@@ -6381,7 +6477,7 @@
           editor.className = "config-tag-editor";
           editor.append(createInlineInput(
             tag.name,
-            (input) => updateTagName(categoryIndex, tagIndex, input, tag.name),
+            (input) => updateTagName(category.id, tag.id, input, tag.name),
             () => {
               editingTag = null;
               renderSettingsPage();
@@ -6434,7 +6530,7 @@
           removeButton.textContent = "删除标签";
           removeButton.addEventListener("click", () => {
             openTagActionMenuKey = null;
-            deleteTag(categoryIndex, tagIndex);
+            deleteTag(category.id, tag.id);
           });
           menu.append(editTagButton, removeButton);
           tagMenuWrap.append(menu);
