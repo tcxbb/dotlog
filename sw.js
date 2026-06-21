@@ -1,4 +1,4 @@
-const CACHE_NAME = "dotlog-v1.3.5-date-page-swipe-preview-lock";
+const CACHE_NAME = "dotlog-v1.3.6-date-page-swipe-gap-easing";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (event) => {
