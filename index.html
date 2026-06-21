@@ -2650,8 +2650,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
-    const APP_VERSION = "v1.4.9";
-    const APP_BUILD_TIME = "2026-06-22 00:40";
+    const APP_VERSION = "v1.4.10";
+    const APP_BUILD_TIME = "2026-06-22 00:48";
 
     const entryForm = document.querySelector("#entryForm");
     const entryInput = document.querySelector("#entryInput");
@@ -4006,6 +4006,264 @@
       console.info("dry-run 为只读操作：未修改记录、未写 localStorage、未触发保存或同步。");
       console.groupEnd();
       return report;
+    }
+
+    function runSafeRecordIdMigration(options = {}) {
+      const dryRun = options?.dryRun !== false;
+      const requiredConfirm = "MIGRATE_SAFE_RECORD_IDS";
+      const preview = previewDotlogRecordMigration();
+      const safeByDate = new Map();
+      const errors = [];
+
+      preview.safeMigrations.forEach((item) => {
+        if (!safeByDate.has(item.dateKey)) safeByDate.set(item.dateKey, new Map());
+        safeByDate.get(item.dateKey).set(item.recordIndex, item);
+      });
+
+      const changedDatePlans = [];
+      const plannedRecords = [];
+      const recordCountBefore = preview.overview.recordCount;
+      const recordCountAfter = preview.overview.recordCount;
+
+      if (preview.errors.categoryConfig) {
+        errors.push({ reason: `category config error: ${preview.errors.categoryConfig}` });
+      }
+      preview.errors.storage.forEach((error) => errors.push({ ...error }));
+
+      safeByDate.forEach((migrationByIndex, dateKey) => {
+        const storageKeyName = `time_tracker_${dateKey}`;
+        const rawValue = localStorage.getItem(storageKeyName);
+        try {
+          const records = JSON.parse(rawValue);
+          if (!Array.isArray(records)) throw new Error("record data is not an array");
+
+          const nextRecords = records.map((record, recordIndex) => {
+            const migration = migrationByIndex.get(recordIndex);
+            if (!migration) return record;
+            if (!record || typeof record !== "object" || Array.isArray(record)) {
+              throw new Error(`safe migration points to malformed record at index ${recordIndex}`);
+            }
+
+            const currentRecordId = normalizeReferenceId(record.id);
+            if (currentRecordId !== migration.recordId) {
+              throw new Error(`record identity changed at index ${recordIndex}`);
+            }
+
+            const nextRecord = { ...record };
+            const changedFields = [];
+            if (migration.proposedCategoryId
+              && normalizeReferenceId(record.categoryId) !== migration.proposedCategoryId) {
+              nextRecord.categoryId = migration.proposedCategoryId;
+              changedFields.push("categoryId");
+            }
+
+            const proposedTagIds = Array.isArray(migration.proposedTagIds)
+              ? [...migration.proposedTagIds]
+              : null;
+            const existingTagIds = Array.isArray(record.tagIds) ? record.tagIds : null;
+            if (proposedTagIds && JSON.stringify(existingTagIds) !== JSON.stringify(proposedTagIds)) {
+              nextRecord.tagIds = proposedTagIds;
+              changedFields.push("tagIds");
+            }
+
+            const beforeUntouched = { ...record };
+            const afterUntouched = { ...nextRecord };
+            delete beforeUntouched.categoryId;
+            delete beforeUntouched.tagIds;
+            delete afterUntouched.categoryId;
+            delete afterUntouched.tagIds;
+            if (JSON.stringify(beforeUntouched) !== JSON.stringify(afterUntouched)) {
+              throw new Error(`non-migration fields changed at index ${recordIndex}`);
+            }
+
+            if (changedFields.length > 0) {
+              plannedRecords.push({
+                dateKey,
+                recordIndex,
+                recordId: currentRecordId,
+                changedFields,
+                categoryId: nextRecord.categoryId || null,
+                tagIds: Array.isArray(nextRecord.tagIds) ? [...nextRecord.tagIds] : []
+              });
+            }
+            return nextRecord;
+          });
+
+          if (nextRecords.length !== records.length) {
+            throw new Error("record count changed while building migration plan");
+          }
+
+          const nextRawValue = JSON.stringify(nextRecords);
+          if (nextRawValue !== rawValue) {
+            changedDatePlans.push({
+              dateKey,
+              storageKey: storageKeyName,
+              rawValue,
+              nextRawValue,
+              beforeCount: records.length,
+              afterCount: nextRecords.length
+            });
+          }
+        } catch (error) {
+          errors.push({
+            dateKey,
+            reason: error instanceof Error ? error.message : String(error)
+          });
+        }
+      });
+
+      const baseResult = {
+        dryRun,
+        applied: false,
+        requiredConfirm,
+        createdBackup: false,
+        backupKey: null,
+        willMigrate: plannedRecords.length,
+        migratedRecords: plannedRecords,
+        skippedRecords: preview.skipped,
+        changedDateKeys: changedDatePlans.map((plan) => plan.dateKey),
+        recordCountBefore,
+        recordCountAfter,
+        recordCountUnchanged: recordCountBefore === recordCountAfter,
+        errors,
+        preview
+      };
+
+      if (dryRun) {
+        window.__dotlogRecordIdMigrationResult = baseResult;
+        console.group("[Dotlog] 安全记录 ID 迁移 dry-run");
+        console.table([{
+          willMigrate: baseResult.willMigrate,
+          skipped: baseResult.skippedRecords.length,
+          changedDates: baseResult.changedDateKeys.length,
+          recordCountBefore,
+          recordCountAfter
+        }]);
+        console.log("完整结果：window.__dotlogRecordIdMigrationResult", baseResult);
+        console.info("dry-run 未创建备份、未写记录、未触发同步。");
+        console.groupEnd();
+        return baseResult;
+      }
+
+      if (options.confirm !== requiredConfirm) {
+        const refusedResult = {
+          ...baseResult,
+          refused: true,
+          reason: "CONFIRMATION_REQUIRED"
+        };
+        window.__dotlogRecordIdMigrationResult = refusedResult;
+        console.warn(`[Dotlog] 真实迁移已拒绝：confirm 必须完全等于 ${requiredConfirm}`);
+        return refusedResult;
+      }
+
+      if (errors.length > 0 || !baseResult.recordCountUnchanged) {
+        const blockedResult = {
+          ...baseResult,
+          refused: true,
+          reason: "MIGRATION_PLAN_INVALID"
+        };
+        window.__dotlogRecordIdMigrationResult = blockedResult;
+        console.error("[Dotlog] 迁移计划校验失败，未创建备份、未写记录", blockedResult);
+        return blockedResult;
+      }
+
+      if (changedDatePlans.length === 0) {
+        const noChangesResult = { ...baseResult, applied: true, noChanges: true };
+        window.__dotlogRecordIdMigrationResult = noChangesResult;
+        console.info("[Dotlog] 没有需要迁移的安全记录，未执行写入。");
+        return noChangesResult;
+      }
+
+      const createdAt = new Date().toISOString();
+      const backupKey = `backup_before_record_id_migration_${createdAt.replace(/[:.]/g, "-")}`;
+      const backupRecords = {};
+      getRecordStorageKeys().forEach((key) => {
+        backupRecords[key] = localStorage.getItem(key);
+      });
+
+      try {
+        localStorage.setItem(backupKey, JSON.stringify({
+          createdAt,
+          migration: "categoryId-tagIds-safe-only",
+          records: backupRecords,
+          categoryConfig: localStorage.getItem("category_config"),
+          preview
+        }));
+      } catch (error) {
+        const backupFailedResult = {
+          ...baseResult,
+          refused: true,
+          reason: "BACKUP_FAILED",
+          errors: [...errors, {
+            reason: error instanceof Error ? error.message : String(error)
+          }]
+        };
+        window.__dotlogRecordIdMigrationResult = backupFailedResult;
+        console.error("[Dotlog] 迁移备份失败，未写任何记录", backupFailedResult);
+        return backupFailedResult;
+      }
+
+      const writtenKeys = [];
+      let rollbackSucceeded = true;
+      try {
+        changedDatePlans.forEach((plan) => {
+          if (localStorage.getItem(plan.storageKey) !== plan.rawValue) {
+            throw new Error(`record data changed after preview: ${plan.dateKey}`);
+          }
+          localStorage.setItem(plan.storageKey, plan.nextRawValue);
+          writtenKeys.push(plan.storageKey);
+          const verifiedRecords = JSON.parse(localStorage.getItem(plan.storageKey));
+          if (!Array.isArray(verifiedRecords) || verifiedRecords.length !== plan.afterCount) {
+            throw new Error(`record count verification failed after write: ${plan.dateKey}`);
+          }
+        });
+      } catch (error) {
+        writtenKeys.reverse().forEach((key) => {
+          try {
+            localStorage.setItem(key, backupRecords[key]);
+          } catch (rollbackError) {
+            rollbackSucceeded = false;
+            console.error("[Dotlog] 迁移失败后的自动恢复也失败", { key, rollbackError });
+          }
+        });
+
+        const writeFailedResult = {
+          ...baseResult,
+          createdBackup: true,
+          backupKey,
+          refused: true,
+          reason: "WRITE_FAILED",
+          rollbackAttempted: writtenKeys.length > 0,
+          rollbackSucceeded,
+          errors: [...errors, {
+            reason: error instanceof Error ? error.message : String(error)
+          }]
+        };
+        window.__dotlogRecordIdMigrationResult = writeFailedResult;
+        console.error("[Dotlog] 迁移写入失败，已尝试恢复", writeFailedResult);
+        return writeFailedResult;
+      }
+
+      const result = {
+        ...baseResult,
+        applied: true,
+        createdBackup: true,
+        backupKey,
+        gistSyncTriggered: false
+      };
+      window.__dotlogRecordIdMigrationResult = result;
+      console.group("[Dotlog] 安全记录 ID 迁移完成");
+      console.table([{
+        migratedRecords: result.migratedRecords.length,
+        changedDates: result.changedDateKeys.length,
+        recordCountBefore,
+        recordCountAfter,
+        createdBackup: result.createdBackup
+      }]);
+      console.log("完整结果：window.__dotlogRecordIdMigrationResult", result);
+      console.info("未修改 record.category、record.tags、record.id；未触发 Gist 同步。");
+      console.groupEnd();
+      return result;
     }
 
     function mapTagIdsByName(tags, tagIds) {
