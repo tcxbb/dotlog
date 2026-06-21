@@ -2756,6 +2756,7 @@
     let applyingRemoteData = false;
     let syncTimer = null;
     let syncInProgress = false;
+    let schemaV1BackupReady = false;
     const importedCalendarCategories = new Set();
     let syncStatus = {
       state: "unconfigured",
@@ -2764,6 +2765,7 @@
     };
 
     const gistDataFile = "dotlog_data.json";
+    const schemaV1BackupMarkerKey = "dotlog_schema_v1_backup_key";
 
     const presetColors = [
       { value: "#7B8EC8", label: "睡眠蓝" },
@@ -3154,13 +3156,7 @@
       }
 
       try {
-        const normalizedConfig = normalizeCategoryConfig(JSON.parse(storedConfig));
-        const normalizedValue = JSON.stringify(normalizedConfig);
-        if (normalizedValue !== storedConfig) {
-          localStorage.setItem("category_config", normalizedValue);
-          markLocalDataChanged();
-        }
-        return normalizedConfig;
+        return normalizeCategoryConfig(JSON.parse(storedConfig));
       } catch {
         const defaultConfig = cloneDefaultCategoryConfig();
         saveCategoryConfig(defaultConfig);
@@ -3431,8 +3427,12 @@
     }
 
     function normalizeRecordList(records, identityScope = "") {
+      if (!Array.isArray(records)) {
+        throw new Error(`记录数据不是数组，已阻止 normalize：${identityScope || "unknown"}`);
+      }
+
       const occurrenceByFingerprint = new Map();
-      return records.map((record) => {
+      const normalizedRecords = records.map((record) => {
         if (typeof record.id === "string" && record.id.trim()) return normalizeRecord(record);
 
         const fingerprint = legacyRecordFingerprint(record);
@@ -3443,6 +3443,80 @@
           id: createLegacyRecordId(record, `${identityScope}:${occurrence}`)
         });
       });
+
+      if (normalizedRecords.length < records.length) {
+        console.warn("[Dotlog] normalize 后记录数量减少，已阻止写回", {
+          identityScope,
+          before: records.length,
+          after: normalizedRecords.length
+        });
+        throw new Error("NORMALIZE_RECORD_COUNT_REGRESSION");
+      }
+
+      return normalizedRecords;
+    }
+
+    function getRecordStorageKeys() {
+      const keys = [];
+      for (let index = 0; index < localStorage.length; index += 1) {
+        const key = localStorage.key(index);
+        if (key && /^time_tracker_\d{4}-\d{2}-\d{2}$/.test(key)) keys.push(key);
+      }
+      return keys.sort();
+    }
+
+    function ensureSchemaV1Backup() {
+      const existingBackupKey = localStorage.getItem(schemaV1BackupMarkerKey);
+      if (existingBackupKey && localStorage.getItem(existingBackupKey)) return true;
+
+      const createdAt = new Date().toISOString();
+      const backupKey = `backup_before_schema_v1_${createdAt.replace(/[:.]/g, "-")}`;
+      const recordValues = {};
+      getRecordStorageKeys().forEach((key) => {
+        recordValues[key] = localStorage.getItem(key);
+      });
+
+      try {
+        localStorage.setItem(backupKey, JSON.stringify({
+          createdAt,
+          schemaVersion: dataSchemaVersion,
+          records: recordValues,
+          categoryConfig: localStorage.getItem("category_config"),
+          lastUpdated: localStorage.getItem("dotlog_last_updated")
+        }));
+        localStorage.setItem(schemaV1BackupMarkerKey, backupKey);
+        console.info("[Dotlog] schema v1 原始数据备份已创建", backupKey);
+        return true;
+      } catch (error) {
+        console.error("[Dotlog] schema v1 备份失败，已阻止记录写回和自动同步", error);
+        return false;
+      }
+    }
+
+    function parseStoredRecordArray(rawValue, key) {
+      if (rawValue === null) return [];
+      const records = JSON.parse(rawValue);
+      if (!Array.isArray(records)) {
+        throw new Error(`记录 key 不是数组：${key}`);
+      }
+      return records;
+    }
+
+    function getRecordCountRegressions(candidateRecords = {}, baselineRecords = {}) {
+      return Object.keys(baselineRecords).flatMap((dateKey) => {
+        const before = Array.isArray(baselineRecords[dateKey]) ? baselineRecords[dateKey].length : 0;
+        const after = Array.isArray(candidateRecords[dateKey]) ? candidateRecords[dateKey].length : 0;
+        return after < before ? [{ dateKey, before, after }] : [];
+      });
+    }
+
+    function assertNoRecordCountRegression(candidateData, baselineData, context) {
+      const regressions = getRecordCountRegressions(candidateData?.records, baselineData?.records);
+      if (regressions.length === 0) return;
+      console.warn(`[Dotlog] ${context} 检测到记录数量减少，已阻止覆盖`, regressions);
+      const error = new Error("RECORD_COUNT_REGRESSION");
+      error.regressions = regressions;
+      throw error;
     }
 
     function getLocalUpdatedAt() {
@@ -3452,23 +3526,16 @@
     function collectLocalData() {
       const records = {};
 
-      for (let index = 0; index < localStorage.length; index += 1) {
-        const key = localStorage.key(index);
-        if (!key || !key.startsWith("time_tracker_")) continue;
-
+      getRecordStorageKeys().forEach((key) => {
         const dateKey = key.replace("time_tracker_", "");
         try {
-          const value = JSON.parse(localStorage.getItem(key)) || [];
-          const normalizedRecords = sortRecords(normalizeRecordList(value, dateKey));
-          records[dateKey] = normalizedRecords;
-          const normalizedValue = JSON.stringify(normalizedRecords);
-          if (normalizedValue !== localStorage.getItem(key)) {
-            localStorage.setItem(key, normalizedValue);
-          }
-        } catch {
-          records[dateKey] = [];
+          const value = parseStoredRecordArray(localStorage.getItem(key), key);
+          records[dateKey] = sortRecords(normalizeRecordList(value, dateKey));
+        } catch (error) {
+          console.error("[Dotlog] 本地记录读取失败，已阻止同步", { key, error });
+          throw error;
         }
-      }
+      });
 
       const settings = loadCategoryConfig();
       return {
@@ -3500,18 +3567,39 @@
     }
 
     function applyRemoteData(data) {
+      if (!schemaV1BackupReady) {
+        throw new Error("SCHEMA_BACKUP_NOT_READY");
+      }
+
+      const localData = collectLocalData();
+      assertNoRecordCountRegression(data, localData, "远程覆盖本地");
+      const normalizedRemoteRecords = {};
+      Object.entries(data.records || {}).forEach(([dateKey, records]) => {
+        if (!Array.isArray(records)) {
+          throw new Error(`远程记录不是数组：${dateKey}`);
+        }
+        const normalizedRecords = sortRecords(normalizeRecordList(records, dateKey));
+        if (normalizedRecords.length < records.length) {
+          console.warn("[Dotlog] 远程记录 normalize 后数量减少，已阻止覆盖", {
+            dateKey,
+            before: records.length,
+            after: normalizedRecords.length
+          });
+          throw new Error("NORMALIZE_RECORD_COUNT_REGRESSION");
+        }
+        normalizedRemoteRecords[dateKey] = normalizedRecords;
+      });
+
       applyingRemoteData = true;
 
       try {
-        const keysToRemove = [];
-        for (let index = 0; index < localStorage.length; index += 1) {
-          const key = localStorage.key(index);
-          if (key && key.startsWith("time_tracker_")) keysToRemove.push(key);
-        }
+        const keysToRemove = getRecordStorageKeys().filter((key) => (
+          !Object.prototype.hasOwnProperty.call(normalizedRemoteRecords, key.replace("time_tracker_", ""))
+        ));
         keysToRemove.forEach((key) => localStorage.removeItem(key));
 
-        Object.entries(data.records || {}).forEach(([dateKey, records]) => {
-          localStorage.setItem(`time_tracker_${dateKey}`, JSON.stringify(sortRecords(normalizeRecordList(records || [], dateKey))));
+        Object.entries(normalizedRemoteRecords).forEach(([dateKey, records]) => {
+          localStorage.setItem(`time_tracker_${dateKey}`, JSON.stringify(records));
         });
 
         const remoteSettings = getSettingsFromGistData(data);
@@ -3613,6 +3701,9 @@
     function syncErrorMessage(error) {
       if (error.message === "TOKEN_INVALID") return "● Token 无效，请检查";
       if (error.message === "GIST_NOT_FOUND") return "● Gist 不存在，请检查 ID";
+      if (error.message === "RECORD_COUNT_REGRESSION") return "● 检测到记录减少，已阻止同步";
+      if (error.message === "NORMALIZE_RECORD_COUNT_REGRESSION") return "● 数据转换数量异常，已阻止同步";
+      if (error.message === "SCHEMA_BACKUP_NOT_READY") return "● 数据备份失败，已阻止同步";
       return "● 无法连接，请检查网络";
     }
 
@@ -3632,7 +3723,7 @@
     }
 
     function queueGistSync() {
-      if (!hasGistSettings() || applyingRemoteData) return;
+      if (!hasGistSettings() || applyingRemoteData || !schemaV1BackupReady) return;
       clearTimeout(syncTimer);
       setSyncStatus("syncing", "● 同步中");
       syncTimer = setTimeout(() => {
@@ -3642,6 +3733,10 @@
 
     async function syncWithGist(options = {}) {
       if (!hasGistSettings() || syncInProgress) return false;
+      if (!schemaV1BackupReady) {
+        setSyncStatus("error", "● 数据备份失败，已阻止同步");
+        return false;
+      }
 
       syncInProgress = true;
       setSyncStatus("syncing", "● 同步中");
@@ -3653,7 +3748,10 @@
         const requiresInitialMerge = options.mergeLocal || !isCurrentGistInitialized();
 
         if (requiresInitialMerge) {
-          nextData = mergeGistData(localData, remoteData || { records: {}, category_config: null, last_updated: "1970-01-01T00:00:00.000Z" });
+          const remoteBaseline = remoteData || { records: {}, category_config: null, last_updated: "1970-01-01T00:00:00.000Z" };
+          nextData = mergeGistData(localData, remoteBaseline);
+          assertNoRecordCountRegression(nextData, localData, "初始合并覆盖本地");
+          assertNoRecordCountRegression(nextData, remoteBaseline, "初始合并覆盖远程");
           applyRemoteData(nextData);
           await pushGistData(nextData);
         } else if (!remoteData) {
@@ -3674,6 +3772,7 @@
             nextData = remoteData;
           } else if (localTime > remoteTime) {
             nextData = localData;
+            assertNoRecordCountRegression(nextData, remoteData, "本地推送远程");
             await pushGistData(nextData);
           } else {
             nextData = localData;
@@ -3701,14 +3800,10 @@
       try {
         const key = storageKey(date);
         const storedValue = localStorage.getItem(key);
-        const records = JSON.parse(storedValue) || [];
-        const normalizedRecords = normalizeRecordList(records, formatDateKey(date));
-        const normalizedValue = JSON.stringify(normalizedRecords);
-        if (normalizedValue !== storedValue) {
-          localStorage.setItem(key, normalizedValue);
-        }
-        return normalizedRecords;
-      } catch {
+        const records = parseStoredRecordArray(storedValue, key);
+        return normalizeRecordList(records, formatDateKey(date));
+      } catch (error) {
+        console.error("[Dotlog] 记录读取失败；原始 localStorage 未被改写", error);
         return [];
       }
     }
@@ -3776,10 +3871,47 @@
       };
     }
 
-    function saveRecords(date, records) {
-      const normalizedRecords = normalizeRecordList(records, formatDateKey(date));
-      localStorage.setItem(storageKey(date), JSON.stringify(normalizedRecords));
-      markLocalDataChanged();
+    function saveRecords(date, records, options = {}) {
+      if (!schemaV1BackupReady) {
+        console.warn("[Dotlog] schema v1 备份尚未完成，已阻止记录写回");
+        return false;
+      }
+
+      const key = storageKey(date);
+      try {
+        const existingRecords = parseStoredRecordArray(localStorage.getItem(key), key);
+        const normalizedRecords = normalizeRecordList(records, formatDateKey(date));
+        if (normalizedRecords.length < records.length) {
+          console.warn("[Dotlog] normalize 后记录数量减少，已阻止写回", {
+            key,
+            before: records.length,
+            after: normalizedRecords.length
+          });
+          return false;
+        }
+
+        if (normalizedRecords.length < existingRecords.length) {
+          const decrease = existingRecords.length - normalizedRecords.length;
+          const intentionalDecrease = options.allowRecordCountDecrease === true
+            && decrease === options.expectedDecrease;
+          if (!intentionalDecrease) {
+            console.warn("[Dotlog] 写回记录少于当前整天数据，已阻止覆盖", {
+              key,
+              before: existingRecords.length,
+              after: normalizedRecords.length,
+              reason: options.reason || "unspecified"
+            });
+            return false;
+          }
+        }
+
+        localStorage.setItem(key, JSON.stringify(normalizedRecords));
+        markLocalDataChanged();
+        return true;
+      } catch (error) {
+        console.error("[Dotlog] 记录写回失败，原始数据保持不变", { key, error });
+        return false;
+      }
     }
 
     function canExtendRecordToNow(record, index, date, now = new Date()) {
@@ -6864,7 +6996,11 @@
       if (!confirm("确认删除这条记录？")) return;
       const latestRecords = loadRecords(viewedDate);
       latestRecords.splice(targetIndex, 1);
-      saveRecords(viewedDate, latestRecords);
+      saveRecords(viewedDate, latestRecords, {
+        allowRecordCountDecrease: true,
+        expectedDecrease: 1,
+        reason: "delete-record"
+      });
       openCategoryIndexes = [];
       openTagIndexes = [];
       classificationDrafts = {};
@@ -7148,8 +7284,9 @@
     renderTimePickerColumn(timePickerHour, 24);
     renderTimePickerColumn(timePickerMinute, 60);
 
+    schemaV1BackupReady = ensureSchemaV1Backup();
     render();
-    if (hasGistSettings()) {
+    if (hasGistSettings() && schemaV1BackupReady) {
       syncWithGist();
     } else {
       updateSyncIndicators();

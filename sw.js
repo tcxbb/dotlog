@@ -1,4 +1,4 @@
-const CACHE_NAME = "dotlog-v1.3.8-data-model-ids";
+const CACHE_NAME = "dotlog-v1.3.9-schema-write-safety";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (event) => {
