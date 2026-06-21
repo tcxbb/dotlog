@@ -2650,8 +2650,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
-    const APP_VERSION = "v1.4.6";
-    const APP_BUILD_TIME = "2026-06-22 00:04";
+    const APP_VERSION = "v1.4.8";
+    const APP_BUILD_TIME = "2026-06-22 00:30";
 
     const entryForm = document.querySelector("#entryForm");
     const entryInput = document.querySelector("#entryInput");
@@ -2782,6 +2782,7 @@
 
     const gistDataFile = "dotlog_data.json";
     const schemaV1BackupMarkerKey = "dotlog_schema_v1_backup_key";
+    const pendingDeletedRecordIdsKey = "dotlog_pending_deleted_record_ids";
 
     const presetColors = [
       { value: "#7B8EC8", label: "睡眠蓝" },
@@ -3645,6 +3646,368 @@
       return report;
     }
 
+    function previewDotlogRecordMigration() {
+      const cleanString = (value) => typeof value === "string" ? value.trim() : "";
+      const addToIndex = (index, key, value) => {
+        if (!key) return;
+        if (!index.has(key)) index.set(key, []);
+        index.get(key).push(value);
+      };
+      const duplicateIndexEntries = (index) => [...index.entries()]
+        .filter(([, matches]) => matches.length > 1)
+        .map(([value, matches]) => ({ value, matches }));
+
+      const dateEntries = [];
+      const storageErrors = [];
+      for (let index = 0; index < localStorage.length; index += 1) {
+        const key = localStorage.key(index);
+        const match = key?.match(/^time_tracker_(\d{4}-\d{2}-\d{2})$/);
+        if (!match) continue;
+
+        try {
+          const records = JSON.parse(localStorage.getItem(key));
+          if (!Array.isArray(records)) {
+            storageErrors.push({ key, reason: "record data is not an array" });
+            dateEntries.push({ dateKey: match[1], records: [] });
+          } else {
+            dateEntries.push({ dateKey: match[1], records });
+          }
+        } catch (error) {
+          storageErrors.push({
+            key,
+            reason: error instanceof Error ? error.message : String(error)
+          });
+          dateEntries.push({ dateKey: match[1], records: [] });
+        }
+      }
+      dateEntries.sort((left, right) => left.dateKey.localeCompare(right.dateKey));
+
+      let configError = null;
+      let rawConfig = null;
+      try {
+        const storedConfig = localStorage.getItem("category_config");
+        if (!storedConfig) throw new Error("category_config is missing");
+        rawConfig = JSON.parse(storedConfig);
+        if (!Array.isArray(rawConfig?.categories)) {
+          throw new Error("category_config.categories is not an array");
+        }
+      } catch (error) {
+        configError = error instanceof Error ? error.message : String(error);
+      }
+
+      const categoryById = new Map();
+      const categoryByName = new Map();
+      const tagById = new Map();
+      const tagByName = new Map();
+      const categories = Array.isArray(rawConfig?.categories) ? rawConfig.categories : [];
+
+      categories.forEach((category, categoryIndex) => {
+        if (!category || typeof category !== "object") return;
+        const categoryRef = {
+          id: cleanString(category.id) || null,
+          name: cleanString(category.name) || null,
+          categoryIndex,
+          tags: []
+        };
+        addToIndex(categoryById, categoryRef.id, categoryRef);
+        addToIndex(categoryByName, categoryRef.name, categoryRef);
+
+        if (!Array.isArray(category.tags)) return;
+        category.tags.forEach((tag, tagIndex) => {
+          const tagRef = {
+            id: cleanString(tag?.id) || null,
+            name: cleanString(typeof tag === "string" ? tag : tag?.name) || null,
+            categoryId: categoryRef.id,
+            categoryName: categoryRef.name,
+            categoryIndex,
+            tagIndex
+          };
+          categoryRef.tags.push(tagRef);
+          addToIndex(tagById, tagRef.id, tagRef);
+          addToIndex(tagByName, tagRef.name, tagRef);
+        });
+      });
+
+      const report = {
+        generatedAt: new Date().toISOString(),
+        readOnly: true,
+        overview: {
+          dateCount: dateEntries.length,
+          recordCount: dateEntries.reduce((total, entry) => total + entry.records.length, 0),
+          safeMigrationCount: 0,
+          skippedCount: 0,
+          alreadyCompleteCount: 0,
+          noMigrationNeededCount: 0,
+          onlyCategoryIdMissingCount: 0,
+          onlyTagIdsMissingCount: 0,
+          categoryIdAndTagIdsMissingCount: 0
+        },
+        safeMigrations: [],
+        skipped: [],
+        risks: {
+          hasDuplicateRecordIds: false,
+          duplicateRecordIds: [],
+          hasMissingRecordIds: false,
+          missingRecordIds: [],
+          hasUnknownCategoryIds: false,
+          unknownCategoryIds: [],
+          hasUnknownTagIds: false,
+          unknownTagIds: [],
+          hasUnsafeMigrationRecords: false,
+          unsafeMigrationRecords: [],
+          configDuplicateCategoryIds: duplicateIndexEntries(categoryById),
+          configDuplicateCategoryNames: duplicateIndexEntries(categoryByName),
+          configDuplicateTagIds: duplicateIndexEntries(tagById),
+          configDuplicateTagNames: duplicateIndexEntries(tagByName),
+          recommendedForRealMigration: false
+        },
+        errors: {
+          categoryConfig: configError,
+          storage: storageErrors
+        }
+      };
+
+      const recordIdOccurrences = new Map();
+
+      dateEntries.forEach(({ dateKey, records }) => {
+        records.forEach((record, recordIndex) => {
+          const base = {
+            dateKey,
+            recordIndex,
+            recordId: cleanString(record?.id) || null,
+            title: cleanString(record?.text) || null,
+            category: cleanString(record?.category) || null,
+            tags: Array.isArray(record?.tags)
+              ? record.tags.map((tagName) => cleanString(tagName)).filter(Boolean)
+              : []
+          };
+
+          if (!record || typeof record !== "object" || Array.isArray(record)) {
+            report.skipped.push({ ...base, reasons: ["malformed record"] });
+            return;
+          }
+
+          const recordId = cleanString(record.id);
+          if (recordId) {
+            addToIndex(recordIdOccurrences, recordId, { dateKey, recordIndex });
+          } else {
+            report.risks.missingRecordIds.push(base);
+          }
+
+          const existingCategoryId = cleanString(record.categoryId);
+          const hasTagIdsField = Array.isArray(record.tagIds);
+          const existingTagIds = hasTagIdsField
+            ? record.tagIds.map((tagId) => cleanString(tagId)).filter(Boolean)
+            : [];
+          const categoryName = base.category || "";
+          const tagNames = base.tags;
+          const hasCategoryId = Boolean(existingCategoryId);
+
+          if (!hasCategoryId && hasTagIdsField) {
+            report.overview.onlyCategoryIdMissingCount += 1;
+          } else if (hasCategoryId && !hasTagIdsField) {
+            report.overview.onlyTagIdsMissingCount += 1;
+          } else if (!hasCategoryId && !hasTagIdsField) {
+            report.overview.categoryIdAndTagIdsMissingCount += 1;
+          }
+
+          const reasons = [];
+          const unsafeReasons = [];
+          let resolvedCategory = null;
+          let proposedCategoryId = existingCategoryId || null;
+          let categoryNeedsChange = false;
+
+          if (existingCategoryId) {
+            const idMatches = categoryById.get(existingCategoryId) || [];
+            if (idMatches.length === 1) {
+              resolvedCategory = idMatches[0];
+            } else {
+              report.risks.unknownCategoryIds.push({ ...base, categoryId: existingCategoryId });
+              const nameMatches = categoryName ? categoryByName.get(categoryName) || [] : [];
+              if (nameMatches.length === 1 && nameMatches[0].id) {
+                resolvedCategory = nameMatches[0];
+                proposedCategoryId = resolvedCategory.id;
+                categoryNeedsChange = true;
+                reasons.push("unknown categoryId recovered by category name");
+              } else if (nameMatches.length === 1) {
+                unsafeReasons.push("categoryId exists but unknown");
+                unsafeReasons.push("matched category is missing stable id");
+              } else if (nameMatches.length > 1) {
+                unsafeReasons.push("categoryId exists but unknown");
+                unsafeReasons.push("category name ambiguous");
+              } else if (categoryName) {
+                unsafeReasons.push("categoryId exists but unknown");
+                unsafeReasons.push("category name unmatched");
+              } else {
+                unsafeReasons.push("categoryId exists but unknown");
+              }
+            }
+          } else if (categoryName) {
+            const nameMatches = categoryByName.get(categoryName) || [];
+            if (nameMatches.length === 1 && nameMatches[0].id) {
+              resolvedCategory = nameMatches[0];
+              proposedCategoryId = resolvedCategory.id;
+              categoryNeedsChange = true;
+              reasons.push("missing categoryId matched by category name");
+            } else if (nameMatches.length === 1) {
+              unsafeReasons.push("matched category is missing stable id");
+            } else if (nameMatches.length > 1) {
+              unsafeReasons.push("category name ambiguous");
+            } else {
+              unsafeReasons.push("category name unmatched");
+            }
+          }
+
+          const invalidTagIds = existingTagIds.filter((tagId) => (tagById.get(tagId) || []).length !== 1);
+          if (invalidTagIds.length > 0) {
+            report.risks.unknownTagIds.push({ ...base, tagIds: invalidTagIds });
+          }
+
+          if (!existingCategoryId && !categoryName && (existingTagIds.length > 0 || tagNames.length > 0)) {
+            unsafeReasons.push("other unsafe reason: tags exist without category context");
+          }
+          if (resolvedCategory && invalidTagIds.length === 0) {
+            const tagCategoryMismatch = existingTagIds.some((tagId) => {
+              const matchedTag = (tagById.get(tagId) || [])[0];
+              return matchedTag && matchedTag.categoryId !== resolvedCategory.id;
+            });
+            if (tagCategoryMismatch) {
+              unsafeReasons.push("other unsafe reason: tagIds belong to a different category");
+            }
+          }
+
+          let proposedTagIds = [...existingTagIds];
+          let tagIdsNeedChange = !hasTagIdsField;
+          const tagIdsAreValid = invalidTagIds.length === 0;
+          const tagIdsAreIncomplete = tagNames.length > 0 && existingTagIds.length !== tagNames.length;
+          const needsTagNameRecovery = tagNames.length > 0
+            && (!hasTagIdsField || existingTagIds.length === 0 || !tagIdsAreValid || tagIdsAreIncomplete);
+
+          if (new Set(tagNames).size !== tagNames.length) {
+            unsafeReasons.push("other unsafe reason: duplicate tag names");
+          }
+
+          if (needsTagNameRecovery) {
+            const matchedTagIds = [];
+            tagNames.forEach((tagName) => {
+              const matches = resolvedCategory
+                ? resolvedCategory.tags.filter((tag) => tag.name === tagName)
+                : (tagByName.get(tagName) || []);
+              if (matches.length === 1 && matches[0].id) {
+                matchedTagIds.push(matches[0].id);
+              } else if (matches.length === 1) {
+                unsafeReasons.push(`matched tag is missing stable id: ${tagName}`);
+              } else if (matches.length > 1) {
+                unsafeReasons.push(`tag name ambiguous: ${tagName}`);
+              } else {
+                unsafeReasons.push(`tag name unmatched: ${tagName}`);
+              }
+            });
+
+            if (unsafeReasons.length === 0) {
+              proposedTagIds = matchedTagIds;
+              tagIdsNeedChange = true;
+              reasons.push(invalidTagIds.length > 0
+                ? "unknown tagIds recovered by tag names"
+                : tagIdsAreIncomplete && hasTagIdsField
+                  ? "incomplete tagIds rebuilt from tag names"
+                  : "missing tagIds matched by tag names");
+            } else if (invalidTagIds.length > 0) {
+              unsafeReasons.push("tagIds exists but unknown");
+            }
+          } else if (invalidTagIds.length > 0) {
+            unsafeReasons.push("tagIds exists but unknown");
+          } else if (!hasTagIdsField && tagNames.length === 0) {
+            proposedTagIds = [];
+            tagIdsNeedChange = true;
+            reasons.push("missing tagIds initialized as empty array");
+          }
+
+          const hasClassificationData = Boolean(
+            existingCategoryId
+            || categoryName
+            || existingTagIds.length
+            || tagNames.length
+          );
+
+          if (unsafeReasons.length > 0) {
+            report.skipped.push({ ...base, reasons: [...new Set(unsafeReasons)] });
+            return;
+          }
+
+          if (!hasClassificationData && !categoryNeedsChange && tagIdsNeedChange) {
+            report.safeMigrations.push({
+              ...base,
+              existingCategoryId: existingCategoryId || null,
+              proposedCategoryId,
+              existingTagIds,
+              proposedTagIds,
+              reasons
+            });
+            return;
+          }
+
+          if (categoryNeedsChange || tagIdsNeedChange) {
+            report.safeMigrations.push({
+              ...base,
+              existingCategoryId: existingCategoryId || null,
+              proposedCategoryId,
+              existingTagIds,
+              proposedTagIds,
+              reasons
+            });
+          } else if (hasClassificationData) {
+            report.overview.alreadyCompleteCount += 1;
+          } else {
+            report.overview.noMigrationNeededCount += 1;
+          }
+        });
+      });
+
+      report.risks.duplicateRecordIds = [...recordIdOccurrences.entries()]
+        .filter(([, occurrences]) => occurrences.length > 1)
+        .map(([recordId, occurrences]) => ({ recordId, occurrences }));
+      report.risks.hasDuplicateRecordIds = report.risks.duplicateRecordIds.length > 0;
+      report.risks.hasMissingRecordIds = report.risks.missingRecordIds.length > 0;
+      report.risks.hasUnknownCategoryIds = report.risks.unknownCategoryIds.length > 0;
+      report.risks.hasUnknownTagIds = report.risks.unknownTagIds.length > 0;
+      report.risks.unsafeMigrationRecords = report.skipped;
+      report.risks.hasUnsafeMigrationRecords = report.skipped.length > 0;
+      report.overview.safeMigrationCount = report.safeMigrations.length;
+      report.overview.skippedCount = report.skipped.length;
+
+      const hasConfigDuplicates = report.risks.configDuplicateCategoryIds.length > 0
+        || report.risks.configDuplicateCategoryNames.length > 0
+        || report.risks.configDuplicateTagIds.length > 0;
+      report.risks.recommendedForRealMigration = report.safeMigrations.length > 0
+        && !configError
+        && storageErrors.length === 0
+        && !report.risks.hasDuplicateRecordIds
+        && !report.risks.hasMissingRecordIds
+        && !report.risks.hasUnsafeMigrationRecords
+        && !hasConfigDuplicates;
+
+      window.__dotlogMigrationPreview = report;
+      console.group("[Dotlog] 历史记录 ID 迁移 dry-run（只读）");
+      console.log("完整报告：window.__dotlogMigrationPreview", report);
+      console.table([report.overview]);
+      console.groupCollapsed(`可安全迁移：${report.safeMigrations.length} 条`);
+      console.table(report.safeMigrations);
+      console.groupEnd();
+      console.groupCollapsed(`必须跳过：${report.skipped.length} 条`);
+      console.table(report.skipped);
+      console.groupEnd();
+      console.groupCollapsed("风险摘要");
+      console.log(report.risks);
+      console.groupEnd();
+      if (configError || storageErrors.length > 0) {
+        console.warn("dry-run 发现无法解析的数据", report.errors);
+      }
+      console.info("dry-run 为只读操作：未修改记录、未写 localStorage、未触发保存或同步。");
+      console.groupEnd();
+      return report;
+    }
+
     function mapTagIdsByName(tags, tagIds) {
       const tagIdMap = new Map();
       if (!Array.isArray(tags)) return tagIdMap;
@@ -4069,6 +4432,87 @@
       }, 0);
     }
 
+    function getPendingDeletedRecordIds() {
+      try {
+        const value = JSON.parse(localStorage.getItem(pendingDeletedRecordIdsKey) || "[]");
+        return Array.isArray(value)
+          ? [...new Set(value.map((recordId) => normalizeReferenceId(recordId)).filter(Boolean))]
+          : [];
+      } catch {
+        return [];
+      }
+    }
+
+    function rememberDeletedRecordIds(recordIds) {
+      const nextIds = [...new Set([
+        ...getPendingDeletedRecordIds(),
+        ...recordIds.map((recordId) => normalizeReferenceId(recordId)).filter(Boolean)
+      ])];
+      if (nextIds.length > 0) {
+        localStorage.setItem(pendingDeletedRecordIdsKey, JSON.stringify(nextIds));
+      }
+    }
+
+    function clearDeletedRecordIds(recordIds) {
+      const clearedIds = new Set(recordIds);
+      const remainingIds = getPendingDeletedRecordIds().filter((recordId) => !clearedIds.has(recordId));
+      if (remainingIds.length > 0) {
+        localStorage.setItem(pendingDeletedRecordIdsKey, JSON.stringify(remainingIds));
+      } else {
+        localStorage.removeItem(pendingDeletedRecordIdsKey);
+      }
+    }
+
+    function applyRecordDeletionIds(data, recordIds) {
+      const deletedIds = new Set(recordIds);
+      const removedIds = new Set();
+      const records = {};
+
+      Object.entries(data?.records || {}).forEach(([dateKey, dayRecords]) => {
+        if (!Array.isArray(dayRecords)) {
+          throw new Error(`远程记录不是数组：${dateKey}`);
+        }
+        records[dateKey] = dayRecords.filter((record) => {
+          const recordId = normalizeReferenceId(record?.id);
+          if (!recordId || !deletedIds.has(recordId)) return true;
+          removedIds.add(recordId);
+          return false;
+        });
+      });
+
+      return {
+        data: { ...data, records },
+        removedIds: [...removedIds]
+      };
+    }
+
+    function findConfirmableRemoteOnlyRecordIds(localData, remoteData) {
+      const regressions = getRecordCountRegressions(localData?.records, remoteData?.records);
+      if (regressions.length === 0) return [];
+
+      const localIds = new Set(Object.values(localData?.records || {}).flatMap((records) => (
+        (Array.isArray(records) ? records : [])
+          .map((record) => normalizeReferenceId(record?.id))
+          .filter(Boolean)
+      )));
+      const remoteOnlyIds = [];
+      let expectedDifference = 0;
+
+      for (const regression of regressions) {
+        expectedDifference += regression.before - regression.after;
+        const remoteRecords = Array.isArray(remoteData?.records?.[regression.dateKey])
+          ? remoteData.records[regression.dateKey]
+          : [];
+        remoteRecords.forEach((record) => {
+          const recordId = normalizeReferenceId(record?.id);
+          if (recordId && !localIds.has(recordId)) remoteOnlyIds.push(recordId);
+        });
+      }
+
+      const uniqueIds = [...new Set(remoteOnlyIds)];
+      return uniqueIds.length === expectedDifference ? uniqueIds : [];
+    }
+
     function isCurrentGistInitialized() {
       const { gistId } = getGistSettings();
       return Boolean(gistId && localStorage.getItem("dotlog_sync_initialized_gist") === gistId);
@@ -4256,7 +4700,37 @@
 
       try {
         const localData = collectLocalData();
-        const remoteData = await fetchGistData();
+        let remoteData = await fetchGistData();
+        const deletionIdsToClear = new Set(getPendingDeletedRecordIds());
+        let deletionApplied = false;
+        let didPush = false;
+
+        if (remoteData && deletionIdsToClear.size > 0) {
+          const deletionResult = applyRecordDeletionIds(remoteData, [...deletionIdsToClear]);
+          remoteData = deletionResult.data;
+          deletionApplied = deletionResult.removedIds.length > 0;
+        }
+
+        if (remoteData && options.confirmLocalDeletions) {
+          const remainingRegressions = getRecordCountRegressions(localData.records, remoteData.records);
+          if (remainingRegressions.length > 0) {
+            const remoteOnlyIds = findConfirmableRemoteOnlyRecordIds(localData, remoteData);
+            if (remoteOnlyIds.length === 0) {
+              throw new Error("RECORD_COUNT_REGRESSION");
+            }
+            const confirmed = confirm(
+              `远程比本地多 ${remoteOnlyIds.length} 条记录。\n\n如果这些记录是你主动删除的，点击“确定”以本地删除结果同步到远程；否则点击“取消”。`
+            );
+            if (!confirmed) throw new Error("RECORD_COUNT_REGRESSION");
+
+            rememberDeletedRecordIds(remoteOnlyIds);
+            remoteOnlyIds.forEach((recordId) => deletionIdsToClear.add(recordId));
+            const deletionResult = applyRecordDeletionIds(remoteData, remoteOnlyIds);
+            remoteData = deletionResult.data;
+            deletionApplied = deletionApplied || deletionResult.removedIds.length > 0;
+          }
+        }
+
         let nextData = null;
         const requiresInitialMerge = options.mergeLocal || !isCurrentGistInitialized();
 
@@ -4267,10 +4741,12 @@
           assertNoRecordCountRegression(nextData, remoteBaseline, "初始合并覆盖远程");
           applyRemoteData(nextData);
           await pushGistData(nextData);
+          didPush = true;
         } else if (!remoteData) {
           nextData = { ...localData, last_updated: new Date().toISOString() };
           applyRemoteData(nextData);
           await pushGistData(nextData);
+          didPush = true;
         } else {
           const localTime = Date.parse(localData.last_updated || "1970-01-01T00:00:00.000Z");
           const remoteTime = Date.parse(remoteData.last_updated || "1970-01-01T00:00:00.000Z");
@@ -4287,9 +4763,22 @@
             nextData = localData;
             assertNoRecordCountRegression(nextData, remoteData, "本地推送远程");
             await pushGistData(nextData);
+            didPush = true;
           } else {
             nextData = localData;
           }
+        }
+
+        if (deletionApplied && !didPush) {
+          nextData = { ...nextData, last_updated: new Date().toISOString() };
+          assertNoRecordCountRegression(nextData, remoteData, "主动删除同步远程");
+          applyRemoteData(nextData);
+          await pushGistData(nextData);
+          didPush = true;
+        }
+
+        if (deletionIdsToClear.size > 0) {
+          clearDeletedRecordIds([...deletionIdsToClear]);
         }
 
         markCurrentGistInitialized();
@@ -6712,7 +7201,7 @@
       const saveButton = document.createElement("button");
       saveButton.className = "outline-button";
       saveButton.type = "button";
-      saveButton.textContent = "保存设置";
+      saveButton.textContent = "保存并同步";
 
       function saveSyncInputs() {
         localStorage.setItem("gist_token", tokenInput.value.trim());
@@ -6727,7 +7216,10 @@
 
       saveButton.addEventListener("click", async () => {
         saveSyncInputs();
-        await syncWithGist({ mergeLocal: true });
+        await syncWithGist({
+          mergeLocal: !isCurrentGistInitialized(),
+          confirmLocalDeletions: true
+        });
       });
 
       actions.append(testButton, saveButton);
@@ -7760,12 +8252,15 @@
       closeCtxMenu();
       if (!confirm("确认删除这条记录？")) return;
       const latestRecords = loadRecords(viewedDate);
-      latestRecords.splice(targetIndex, 1);
-      saveRecords(viewedDate, latestRecords, {
+      const [deletedRecord] = latestRecords.splice(targetIndex, 1);
+      const saved = saveRecords(viewedDate, latestRecords, {
         allowRecordCountDecrease: true,
         expectedDecrease: 1,
         reason: "delete-record"
       });
+      if (!saved) return;
+      const deletedRecordId = normalizeReferenceId(deletedRecord?.id);
+      if (deletedRecordId) rememberDeletedRecordIds([deletedRecordId]);
       openCategoryIndexes = [];
       openTagIndexes = [];
       classificationDrafts = {};
@@ -8064,7 +8559,15 @@
     }
 
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("./sw.js").catch(() => {});
+      let reloadingForServiceWorkerUpdate = false;
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (reloadingForServiceWorkerUpdate) return;
+        reloadingForServiceWorkerUpdate = true;
+        window.location.reload();
+      });
+      navigator.serviceWorker.register(`./sw.js?version=${encodeURIComponent(APP_VERSION)}`, {
+        updateViaCache: "none"
+      }).then((registration) => registration.update()).catch(() => {});
     }
   </script>
 </body>

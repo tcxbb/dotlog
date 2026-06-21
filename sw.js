@@ -1,4 +1,4 @@
-const CACHE_NAME = "dotlog-v1.4.6";
+const CACHE_NAME = "dotlog-v1.4.8";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (event) => {
@@ -16,5 +16,26 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
+  if (event.request.mode === "navigate") {
+    event.respondWith(
+      fetch(event.request, { cache: "no-store" })
+        .then((response) => {
+          if (response.ok) {
+            const cachedResponse = response.clone();
+            event.waitUntil(
+              caches.open(CACHE_NAME).then((cache) => cache.put(event.request, cachedResponse))
+            );
+          }
+          return response;
+        })
+        .catch(() => (
+          caches.match(event.request)
+            .then((response) => response || caches.match("./"))
+            .then((response) => response || caches.match("./index.html"))
+        ))
+    );
+    return;
+  }
+
   event.respondWith(caches.match(event.request).then((response) => response || fetch(event.request)));
 });
