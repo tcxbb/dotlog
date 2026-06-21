@@ -3207,6 +3207,59 @@
       return id || null;
     }
 
+    function resolveRecordCategory(record) {
+      if (!record || typeof record !== "object") return null;
+
+      const categoryId = normalizeReferenceId(record.categoryId);
+      if (categoryId) {
+        const categoryById = findCategoryById(categoryId);
+        if (categoryById) return categoryById;
+      }
+
+      const categoryName = typeof record.category === "string" ? record.category.trim() : "";
+      return categoryName ? findCategoryByName(categoryName) || null : null;
+    }
+
+    function resolveRecordCategoryName(record) {
+      const category = resolveRecordCategory(record);
+      if (category) return category.name;
+      return typeof record?.category === "string" ? record.category.trim() : "";
+    }
+
+    function resolveRecordTags(record) {
+      if (!record || typeof record !== "object") return [];
+
+      const tagsById = Array.isArray(record.tagIds)
+        ? record.tagIds
+          .map((tagId) => normalizeReferenceId(tagId))
+          .filter(Boolean)
+          .map((tagId) => findTagById(tagId)?.tag || null)
+          .filter(Boolean)
+        : [];
+      if (tagsById.length > 0) {
+        return [...new Map(tagsById.map((tag) => [tag.id, tag])).values()];
+      }
+
+      const categoryName = resolveRecordCategoryName(record);
+      if (!categoryName || !Array.isArray(record.tags)) return [];
+
+      const tagsByName = record.tags
+        .map((tagName) => typeof tagName === "string" ? tagName.trim() : "")
+        .filter(Boolean)
+        .map((tagName) => findTagByName(categoryName, tagName)?.tag || null)
+        .filter(Boolean);
+      return [...new Map(tagsByName.map((tag) => [tag.id, tag])).values()];
+    }
+
+    function resolveRecordTagNames(record) {
+      const tagNames = resolveRecordTags(record).map((tag) => tag.name);
+      if (tagNames.length > 0) return tagNames;
+      if (!Array.isArray(record?.tags)) return [];
+      return [...new Set(record.tags
+        .map((tagName) => typeof tagName === "string" ? tagName.trim() : "")
+        .filter(Boolean))];
+    }
+
     function mapTagIdsByName(tags, tagIds) {
       const tagIdMap = new Map();
       if (!Array.isArray(tags)) return tagIdMap;
@@ -4180,8 +4233,8 @@
           const td = document.createElement("td");
 
           if (cellIndex === 4) {
-            if (value.category) {
-              td.append(createCategoryBadge(value.category));
+            if (value.displayCategory) {
+              td.append(createCategoryBadge(value.displayCategory));
             } else {
               const empty = document.createElement("span");
               empty.className = "empty-category";
@@ -4189,12 +4242,12 @@
               td.append(empty);
             }
           } else if (cellIndex === 5) {
-            if (value.category && value.tags.length > 0) {
+            if (value.displayCategory && value.displayTags.length > 0) {
               const tableLabels = document.createElement("div");
               tableLabels.className = "label-stack";
               tableLabels.style.justifyContent = "flex-start";
-              value.tags.forEach((tag) => {
-                tableLabels.append(createTagBadge(tag, value.category, -1));
+              value.displayTags.forEach((tag) => {
+                tableLabels.append(createTagBadge(tag, value.displayCategory, -1));
               });
               td.append(tableLabels);
             } else {
@@ -4273,8 +4326,12 @@
             : interactive
               ? classificationDrafts[index]
               : null;
-          const displayCategory = classificationDraft ? classificationDraft.category : record.category;
-          const displayTags = classificationDraft ? classificationDraft.tags : record.tags;
+          const displayCategory = classificationDraft
+            ? classificationDraft.category
+            : resolveRecordCategoryName(record);
+          const displayTags = classificationDraft
+            ? classificationDraft.tags
+            : resolveRecordTagNames(record);
           const displayColor = displayCategory ? categoryColor(displayCategory) : null;
           const interval = getRecordInterval(records, index, date);
           const durationText = interval ? formatDuration(interval.duration) : "—";
@@ -4654,11 +4711,15 @@
 
     function getClassificationDraft(index, record) {
       if (!classificationDrafts[index]) {
+        const resolvedCategory = resolveRecordCategory(record);
+        const resolvedTags = resolveRecordTags(record);
         classificationDrafts[index] = {
-          category: record.category || null,
-          tags: Array.isArray(record.tags) ? [...record.tags] : [],
-          categoryId: normalizeReferenceId(record.categoryId),
-          tagIds: Array.isArray(record.tagIds) ? [...record.tagIds] : []
+          category: resolveRecordCategoryName(record) || null,
+          tags: resolveRecordTagNames(record),
+          categoryId: resolvedCategory?.id || normalizeReferenceId(record.categoryId),
+          tagIds: resolvedTags.length > 0
+            ? resolvedTags.map((tag) => tag.id)
+            : (Array.isArray(record.tagIds) ? [...record.tagIds] : [])
         };
       }
 
@@ -4895,7 +4956,7 @@
       const picker = document.createElement("div");
       picker.className = "tag-picker";
       const draft = getClassificationDraft(index, record);
-      const activeCategory = draft.category || record.category;
+      const activeCategory = draft.category || resolveRecordCategoryName(record);
       const activeTags = draft.tags;
 
       const prompt = document.createElement("div");
@@ -4956,16 +5017,20 @@
 
     function startEditingRecord(index, record) {
       const interval = getRecordInterval(loadRecords(viewedDate), index, viewedDate);
+      const resolvedCategory = resolveRecordCategory(record);
+      const resolvedTags = resolveRecordTags(record);
       editingRecordIndex = index;
       editDraft = {
         startTime: record.startTime || interval?.startTime || record.time || "",
         time: record.time || "",
         text: record.text || "",
         note: record.note || "",
-        category: record.category || null,
-        tags: Array.isArray(record.tags) ? [...record.tags] : [],
-        categoryId: normalizeReferenceId(record.categoryId),
-        tagIds: Array.isArray(record.tagIds) ? [...record.tagIds] : [],
+        category: resolveRecordCategoryName(record) || null,
+        tags: resolveRecordTagNames(record),
+        categoryId: resolvedCategory?.id || normalizeReferenceId(record.categoryId),
+        tagIds: resolvedTags.length > 0
+          ? resolvedTags.map((tag) => tag.id)
+          : (Array.isArray(record.tagIds) ? [...record.tagIds] : []),
         isBackfill: record.isBackfill || false,
         isSplit: record.isSplit || false
       };
@@ -6200,6 +6265,8 @@
           duration: interval.duration,
           category: record.category,
           tags: record.tags,
+          displayCategory: resolveRecordCategoryName(record),
+          displayTags: resolveRecordTagNames(record),
           text: record.text,
           note: record.note,
           isBackfill: record.isBackfill,
