@@ -2650,8 +2650,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
-    const APP_VERSION = "v1.4.12";
-    const APP_BUILD_TIME = "2026-06-22 01:07";
+    const APP_VERSION = "v1.4.13";
+    const APP_BUILD_TIME = "2026-06-22 01:15";
 
     const entryForm = document.querySelector("#entryForm");
     const entryInput = document.querySelector("#entryInput");
@@ -5772,39 +5772,412 @@
       }
     }
 
-    function mergeGistData(localData, remoteData) {
-      const mergedRecords = {};
-      const allDates = new Set([
-        ...Object.keys(remoteData.records || {}),
-        ...Object.keys(localData.records || {})
-      ]);
+    function stableSerializeForGistMerge(value) {
+      const normalizeValue = (item) => {
+        if (Array.isArray(item)) return item.map(normalizeValue);
+        if (!item || typeof item !== "object") return item;
+        return Object.keys(item).sort().reduce((result, key) => {
+          if (item[key] !== undefined) result[key] = normalizeValue(item[key]);
+          return result;
+        }, {});
+      };
+      return JSON.stringify(normalizeValue(value));
+    }
 
-      allDates.forEach((dateKey) => {
-        const seen = new Set();
-        const merged = [];
-        [...(remoteData.records?.[dateKey] || []), ...(localData.records?.[dateKey] || [])]
-          .map(normalizeRecord)
-          .forEach((record) => {
-            const signature = JSON.stringify(record);
-            if (seen.has(signature)) return;
-            seen.add(signature);
-            merged.push(record);
-          });
-        mergedRecords[dateKey] = sortRecords(merged);
+    function getRecordMergeConflictFields(localRecord, remoteRecord) {
+      const cleanString = (value) => typeof value === "string" ? value.trim() : "";
+      const cleanArray = (value) => Array.isArray(value)
+        ? value.map(cleanString).filter(Boolean).sort()
+        : [];
+      const firstString = (...values) => {
+        for (const value of values) {
+          const cleaned = cleanString(value);
+          if (cleaned) return cleaned;
+        }
+        return null;
+      };
+      const comparable = (record) => {
+        const knownFields = new Set([
+          "id", "start", "startTime", "end", "endTime", "time",
+          "title", "text", "summary", "categoryId", "tagIds", "category", "tags",
+          "updatedAt", "note", "description", "createdAt", "isBackfill", "isSplit"
+        ]);
+        const additionalFields = Object.keys(record || {}).reduce((result, key) => {
+          if (!knownFields.has(key) && record[key] !== undefined) result[key] = record[key];
+          return result;
+        }, {});
+        return {
+          start: firstString(record?.start, record?.startTime),
+          end: firstString(record?.end, record?.endTime, record?.time),
+          titleTextSummary: firstString(record?.title, record?.text, record?.summary),
+          categoryId: cleanString(record?.categoryId) || null,
+          tagIds: cleanArray(record?.tagIds),
+          category: cleanString(record?.category) || null,
+          tags: cleanArray(record?.tags),
+          updatedAt: cleanString(record?.updatedAt) || null,
+          note: cleanString(record?.note) || null,
+          description: cleanString(record?.description) || null,
+          createdAt: cleanString(record?.createdAt) || null,
+          isBackfill: Boolean(record?.isBackfill),
+          isSplit: Boolean(record?.isSplit),
+          additionalFields
+        };
+      };
+      const localComparable = comparable(localRecord);
+      const remoteComparable = comparable(remoteRecord);
+      const conflictFields = Object.keys(localComparable).filter((field) => (
+        stableSerializeForGistMerge(localComparable[field])
+          !== stableSerializeForGistMerge(remoteComparable[field])
+      ));
+
+      return conflictFields;
+    }
+
+    function getReliableRecordUpdatedAt(record) {
+      const value = typeof record?.updatedAt === "string" ? record.updatedAt.trim() : "";
+      if (!value) return null;
+      const timestamp = Date.parse(value);
+      return Number.isFinite(timestamp) ? timestamp : null;
+    }
+
+    function getRecordMergeSimilarity(record) {
+      const cleanString = (value) => typeof value === "string" ? value.trim() : "";
+      const title = cleanString(
+        record?.title || record?.text || record?.summary || record?.description
+      ).replace(/\s+/g, " ").toLowerCase();
+      const start = cleanString(record?.start || record?.startTime);
+      const end = cleanString(record?.end || record?.endTime || record?.time);
+      const toMinutes = (value) => {
+        const match = value.match(/^(\d{1,2}):(\d{2})$/);
+        if (!match) return null;
+        const hours = Number(match[1]);
+        const minutes = Number(match[2]);
+        if (hours > 23 || minutes > 59) return null;
+        return hours * 60 + minutes;
+      };
+      return { title, start, end, startMinutes: toMinutes(start), endMinutes: toMinutes(end) };
+    }
+
+    function areRecordsSuspiciouslySimilar(localRecord, remoteRecord) {
+      const local = getRecordMergeSimilarity(localRecord);
+      const remote = getRecordMergeSimilarity(remoteRecord);
+      if (!local.title || local.title !== remote.title) return false;
+      if (local.start === remote.start && local.end === remote.end) return true;
+      if (local.startMinutes === null || remote.startMinutes === null
+        || local.endMinutes === null || remote.endMinutes === null) return false;
+      const minuteDifference = (left, right) => {
+        const difference = Math.abs(left - right);
+        return Math.min(difference, 1440 - difference);
+      };
+      return minuteDifference(local.startMinutes, remote.startMinutes) <= 10
+        && minuteDifference(local.endMinutes, remote.endMinutes) <= 10;
+    }
+
+    function mergeDateRecordsByRecordId(localRecords, remoteRecords, dateKey, options = {}) {
+      const localList = Array.isArray(localRecords) ? localRecords : [];
+      const remoteList = Array.isArray(remoteRecords) ? remoteRecords : [];
+      const localById = new Map();
+      const remoteById = new Map();
+      const missingIds = [];
+      const malformedRecords = [];
+      const indexRecords = (records, side, index) => {
+        records.forEach((record, recordIndex) => {
+          if (!record || typeof record !== "object" || Array.isArray(record)) {
+            malformedRecords.push({ side, dateKey, recordIndex, reason: "record is not an object" });
+            return;
+          }
+          const recordId = normalizeReferenceId(record.id);
+          if (!recordId) {
+            missingIds.push({ side, dateKey, recordIndex, record });
+            return;
+          }
+          if (!index.has(recordId)) index.set(recordId, []);
+          index.get(recordId).push({ side, dateKey, recordIndex, record });
+        });
+      };
+      indexRecords(localList, "local", localById);
+      indexRecords(remoteList, "remote", remoteById);
+
+      const duplicateIds = [];
+      const duplicateIdSet = new Set();
+      [["local", localById], ["remote", remoteById]].forEach(([side, index]) => {
+        index.forEach((occurrences, recordId) => {
+          if (occurrences.length <= 1) return;
+          duplicateIdSet.add(recordId);
+          duplicateIds.push({ side, dateKey, recordId, occurrences });
+        });
       });
 
-      const mergedSettings = normalizeCategoryConfig(
-        getSettingsFromGistData(remoteData)
-          || getSettingsFromGistData(localData)
-          || cloneDefaultCategoryConfig()
+      const mergedRecords = [];
+      const sameIds = [];
+      const conflicts = [];
+      const resolvedConflicts = [];
+      const onlyLocal = [];
+      const onlyRemote = [];
+      const allIds = new Set([...localById.keys(), ...remoteById.keys()]);
+      allIds.forEach((recordId) => {
+        if (duplicateIdSet.has(recordId)) return;
+        const localOccurrence = (localById.get(recordId) || [])[0] || null;
+        const remoteOccurrence = (remoteById.get(recordId) || [])[0] || null;
+        if (localOccurrence && remoteOccurrence) {
+          const conflictFields = getRecordMergeConflictFields(
+            localOccurrence.record,
+            remoteOccurrence.record
+          );
+          if (conflictFields.length === 0) {
+            sameIds.push(recordId);
+            mergedRecords.push(localOccurrence.record);
+            return;
+          }
+
+          const localUpdatedAt = getReliableRecordUpdatedAt(localOccurrence.record);
+          const remoteUpdatedAt = getReliableRecordUpdatedAt(remoteOccurrence.record);
+          if (localUpdatedAt !== null && remoteUpdatedAt !== null && localUpdatedAt !== remoteUpdatedAt) {
+            const winner = remoteUpdatedAt > localUpdatedAt ? "remote" : "local";
+            resolvedConflicts.push({
+              dateKey,
+              recordId,
+              conflictFields,
+              winner,
+              localUpdatedAt: localOccurrence.record.updatedAt,
+              remoteUpdatedAt: remoteOccurrence.record.updatedAt
+            });
+            mergedRecords.push(winner === "remote" ? remoteOccurrence.record : localOccurrence.record);
+          } else {
+            conflicts.push({
+              dateKey,
+              recordId,
+              conflictFields,
+              localRecord: localOccurrence.record,
+              remoteRecord: remoteOccurrence.record,
+              reason: "content differs without reliable distinct updatedAt"
+            });
+            mergedRecords.push(localOccurrence.record);
+          }
+        } else if (localOccurrence) {
+          onlyLocal.push({ dateKey, recordId, record: localOccurrence.record });
+          mergedRecords.push(localOccurrence.record);
+        } else if (remoteOccurrence) {
+          onlyRemote.push({ dateKey, recordId, record: remoteOccurrence.record });
+          mergedRecords.push(remoteOccurrence.record);
+        }
+      });
+
+      const suspectedDuplicates = [];
+      onlyLocal.forEach((localItem) => {
+        onlyRemote.forEach((remoteItem) => {
+          if (!areRecordsSuspiciouslySimilar(localItem.record, remoteItem.record)) return;
+          suspectedDuplicates.push({
+            dateKey,
+            localRecordId: localItem.recordId,
+            remoteRecordId: remoteItem.recordId,
+            reason: "different ids with same title and same or nearby time range"
+          });
+        });
+      });
+
+      const localDateExists = options.localDateExists !== false;
+      const remoteDateExists = options.remoteDateExists !== false;
+      const smallerCount = Math.min(localList.length, remoteList.length);
+      const largerCount = Math.max(localList.length, remoteList.length);
+      const countDifference = largerCount - smallerCount;
+      const hasSparseRisk = localDateExists && remoteDateExists && largerCount > 0 && (
+        (smallerCount <= 3 && countDifference >= 3)
+        || (largerCount >= 5 && smallerCount / largerCount <= 0.5)
       );
+      const sparseRisk = {
+        hasRisk: hasSparseRisk,
+        dateKey,
+        localCount: localList.length,
+        remoteCount: remoteList.length,
+        sparseSide: hasSparseRisk
+          ? localList.length < remoteList.length ? "local" : "remote"
+          : null,
+        remoteToLocalWouldRegress: remoteList.length < localList.length,
+        localToRemoteWouldRegress: localList.length < remoteList.length
+      };
+
+      const unsafeOriginalRecords = [
+        ...missingIds.map((item) => item.record).filter(Boolean),
+        ...duplicateIds.flatMap((item) => item.occurrences.map((occurrence) => occurrence.record)),
+        ...malformedRecords.map(({ side, recordIndex }) => (
+          side === "local" ? localList[recordIndex] : remoteList[recordIndex]
+        ))
+      ];
+      unsafeOriginalRecords.forEach((record) => {
+        if (!mergedRecords.includes(record)) mergedRecords.push(record);
+      });
+
+      const allTimesValid = mergedRecords.every((record) => (
+        record && typeof record === "object" && isValidTimeInput(record.time || "")
+      ));
+      const stableMergedRecords = allTimesValid ? sortRecords(mergedRecords) : [...mergedRecords];
+      const countSafety = {
+        mergedCount: stableMergedRecords.length,
+        preservesLocalCount: stableMergedRecords.length >= localList.length,
+        preservesRemoteCount: stableMergedRecords.length >= remoteList.length
+      };
+      const skippedUnsafe = [
+        ...missingIds.map((item) => ({ type: "missing-id", ...item })),
+        ...duplicateIds.map((item) => ({ type: "duplicate-id", ...item })),
+        ...malformedRecords.map((item) => ({ type: "malformed-record", ...item })),
+        ...conflicts.map((item) => ({ type: "unresolved-conflict", ...item })),
+        ...suspectedDuplicates.map((item) => ({ type: "suspected-duplicate", ...item })),
+        ...(hasSparseRisk ? [{ type: "sparse-risk", ...sparseRisk }] : [])
+      ];
+      const shouldApply = skippedUnsafe.length === 0
+        && countSafety.preservesLocalCount
+        && countSafety.preservesRemoteCount;
 
       return {
+        dateKey,
+        mergedRecords: stableMergedRecords,
+        conflicts,
+        resolvedConflicts,
+        skippedUnsafe,
+        onlyLocal,
+        onlyRemote,
+        sameIds,
+        duplicateIds,
+        missingIds,
+        malformedRecords,
+        suspectedDuplicates,
+        sparseRisk,
+        countSafety,
+        shouldApply
+      };
+    }
+
+    function getDatasetRecordIdIndex(data, source) {
+      const index = new Map();
+      Object.entries(data?.records || {}).forEach(([dateKey, records]) => {
+        if (!Array.isArray(records)) return;
+        records.forEach((record, recordIndex) => {
+          const recordId = normalizeReferenceId(record?.id);
+          if (!recordId) return;
+          if (!index.has(recordId)) index.set(recordId, []);
+          index.get(recordId).push({ source, dateKey, recordIndex, record });
+        });
+      });
+      return index;
+    }
+
+    function areGistRecordSetsEquivalent(leftRecords = {}, rightRecords = {}) {
+      const allDates = new Set([...Object.keys(leftRecords), ...Object.keys(rightRecords)]);
+      for (const dateKey of allDates) {
+        const leftList = Array.isArray(leftRecords[dateKey]) ? leftRecords[dateKey] : [];
+        const rightList = Array.isArray(rightRecords[dateKey]) ? rightRecords[dateKey] : [];
+        if (leftList.length !== rightList.length) return false;
+        const rightById = new Map();
+        rightList.forEach((record) => {
+          const recordId = normalizeReferenceId(record?.id);
+          if (recordId && !rightById.has(recordId)) rightById.set(recordId, record);
+        });
+        if (rightById.size !== rightList.length) return false;
+        for (const leftRecord of leftList) {
+          const recordId = normalizeReferenceId(leftRecord?.id);
+          const rightRecord = recordId ? rightById.get(recordId) : null;
+          if (!rightRecord || getRecordMergeConflictFields(leftRecord, rightRecord).length > 0) {
+            return false;
+          }
+        }
+      }
+      return true;
+    }
+
+    function isGistDataEquivalentForMerge(leftData, rightData) {
+      if (!areGistRecordSetsEquivalent(leftData?.records || {}, rightData?.records || {})) return false;
+      return stableSerializeForGistMerge(getSettingsFromGistData(leftData))
+        === stableSerializeForGistMerge(getSettingsFromGistData(rightData));
+    }
+
+    function mergeGistData(localData, remoteData, options = {}) {
+      const localRecords = localData?.records || {};
+      const remoteRecords = remoteData?.records || {};
+      const allDates = [...new Set([
+        ...Object.keys(remoteRecords),
+        ...Object.keys(localRecords)
+      ])].sort();
+      const invalidDateRecords = [
+        ...Object.entries(localRecords)
+          .filter(([, records]) => !Array.isArray(records))
+          .map(([dateKey]) => ({ source: "local", dateKey, reason: "date records are not an array" })),
+        ...Object.entries(remoteRecords)
+          .filter(([, records]) => !Array.isArray(records))
+          .map(([dateKey]) => ({ source: "remote", dateKey, reason: "date records are not an array" }))
+      ];
+      const dateResults = allDates.map((dateKey) => mergeDateRecordsByRecordId(
+        localRecords[dateKey] || [],
+        remoteRecords[dateKey] || [],
+        dateKey,
+        {
+          localDateExists: Object.prototype.hasOwnProperty.call(localRecords, dateKey),
+          remoteDateExists: Object.prototype.hasOwnProperty.call(remoteRecords, dateKey)
+        }
+      ));
+
+      const localIdIndex = getDatasetRecordIdIndex(localData, "local");
+      const remoteIdIndex = getDatasetRecordIdIndex(remoteData, "remote");
+      const datasetDuplicateIds = [];
+      [["local", localIdIndex], ["remote", remoteIdIndex]].forEach(([source, index]) => {
+        index.forEach((occurrences, recordId) => {
+          if (occurrences.length > 1) datasetDuplicateIds.push({ source, recordId, occurrences });
+        });
+      });
+      const crossDateIdConflicts = [];
+      localIdIndex.forEach((localOccurrences, recordId) => {
+        const remoteOccurrences = remoteIdIndex.get(recordId) || [];
+        if (localOccurrences.length !== 1 || remoteOccurrences.length !== 1) return;
+        if (localOccurrences[0].dateKey === remoteOccurrences[0].dateKey) return;
+        crossDateIdConflicts.push({
+          recordId,
+          local: localOccurrences[0],
+          remote: remoteOccurrences[0]
+        });
+      });
+
+      const mergedRecords = Object.fromEntries(dateResults.map((result) => (
+        [result.dateKey, result.mergedRecords]
+      )));
+      const preferredSettingsData = options.settingsPreference === "local" ? localData : remoteData;
+      const fallbackSettingsData = options.settingsPreference === "local" ? remoteData : localData;
+      const mergedSettings = normalizeCategoryConfig(
+        getSettingsFromGistData(preferredSettingsData)
+          || getSettingsFromGistData(fallbackSettingsData)
+          || cloneDefaultCategoryConfig()
+      );
+      const data = {
         records: mergedRecords,
         __settings__: mergedSettings,
         category_config: mergedSettings,
         last_updated: new Date().toISOString()
       };
+      const plan = {
+        generatedAt: new Date().toISOString(),
+        shouldApply: dateResults.every((result) => result.shouldApply)
+          && invalidDateRecords.length === 0
+          && datasetDuplicateIds.length === 0
+          && crossDateIdConflicts.length === 0,
+        dateResults,
+        invalidDateRecords,
+        datasetDuplicateIds,
+        crossDateIdConflicts,
+        conflicts: dateResults.flatMap((result) => result.conflicts),
+        resolvedConflicts: dateResults.flatMap((result) => result.resolvedConflicts),
+        sparseRisks: dateResults.filter((result) => result.sparseRisk.hasRisk)
+          .map((result) => result.sparseRisk),
+        skippedUnsafe: dateResults.flatMap((result) => result.skippedUnsafe),
+        data
+      };
+      window.__dotlogLastGistMergePlan = plan;
+
+      if (!plan.shouldApply) {
+        console.warn("[Dotlog] record.id 合并发现风险，已阻止本地应用和远程推送", plan);
+        const error = new Error("GIST_MERGE_UNSAFE");
+        error.mergePlan = plan;
+        throw error;
+      }
+      return data;
     }
 
     function markLocalDataChanged() {
@@ -5864,6 +6237,7 @@
       if (error.message === "NORMALIZE_RECORD_COUNT_REGRESSION") return "● 数据转换数量异常，已阻止同步";
       if (error.message === "SCHEMA_BACKUP_NOT_READY") return "● 数据备份失败，已阻止同步";
       if (error.message === "MANUAL_SYNC_BACKUP_FAILED") return "● 手动同步备份失败，已阻止同步";
+      if (error.message === "GIST_MERGE_UNSAFE") return "● 记录冲突或数据风险，已阻止同步";
       return "● 无法连接，请检查网络";
     }
 
@@ -5949,41 +6323,28 @@
         }
 
         let nextData = null;
-        const requiresInitialMerge = options.mergeLocal || !isCurrentGistInitialized();
 
-        if (requiresInitialMerge) {
-          const remoteBaseline = remoteData || { records: {}, category_config: null, last_updated: "1970-01-01T00:00:00.000Z" };
-          nextData = mergeGistData(localData, remoteBaseline);
+        if (remoteData) {
+          const remoteBaseline = remoteData;
+          const requiresInitialMerge = options.mergeLocal || !isCurrentGistInitialized();
+          const localTime = Date.parse(localData.last_updated || "1970-01-01T00:00:00.000Z");
+          const remoteTime = Date.parse(remoteBaseline.last_updated || "1970-01-01T00:00:00.000Z");
+          const settingsPreference = requiresInitialMerge || remoteTime > localTime ? "remote" : "local";
+          nextData = mergeGistData(localData, remoteBaseline, { settingsPreference });
           assertNoRecordCountRegression(nextData, localData, "初始合并覆盖本地");
           assertNoRecordCountRegression(nextData, remoteBaseline, "初始合并覆盖远程");
-          applyRemoteData(nextData);
-          await pushGistData(nextData);
-          didPush = true;
-        } else if (!remoteData) {
+          const shouldApplyLocally = !isGistDataEquivalentForMerge(localData, nextData);
+          const shouldPushRemotely = !isGistDataEquivalentForMerge(remoteBaseline, nextData);
+          if (shouldApplyLocally) applyRemoteData(nextData);
+          if (shouldPushRemotely) {
+            await pushGistData(nextData);
+            didPush = true;
+          }
+        } else {
           nextData = { ...localData, last_updated: new Date().toISOString() };
           applyRemoteData(nextData);
           await pushGistData(nextData);
           didPush = true;
-        } else {
-          const localTime = Date.parse(localData.last_updated || "1970-01-01T00:00:00.000Z");
-          const remoteTime = Date.parse(remoteData.last_updated || "1970-01-01T00:00:00.000Z");
-          const localRecordCount = countDataRecords(localData);
-          const remoteRecordCount = countDataRecords(remoteData);
-
-          if (localRecordCount === 0 && remoteRecordCount > 0) {
-            applyRemoteData(remoteData);
-            nextData = remoteData;
-          } else if (remoteTime > localTime) {
-            applyRemoteData(remoteData);
-            nextData = remoteData;
-          } else if (localTime > remoteTime) {
-            nextData = localData;
-            assertNoRecordCountRegression(nextData, remoteData, "本地推送远程");
-            await pushGistData(nextData);
-            didPush = true;
-          } else {
-            nextData = localData;
-          }
         }
 
         if (deletionApplied && !didPush) {
