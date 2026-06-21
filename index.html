@@ -731,6 +731,47 @@
       display: none;
     }
 
+    .date-page-host {
+      position: relative;
+      min-height: 1px;
+    }
+
+    .date-page-host.is-swipe-previewing > .table-tools,
+    .date-page-host.is-swipe-previewing > #recordsArea,
+    .date-page-host.is-swipe-previewing > .app-footer {
+      visibility: hidden;
+    }
+
+    .date-swipe-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 20;
+      overflow: hidden;
+      background: var(--bg);
+      pointer-events: none;
+    }
+
+    .date-swipe-overlay.is-hidden {
+      display: none;
+    }
+
+    .date-swipe-track {
+      display: flex;
+      height: 100%;
+      will-change: transform;
+    }
+
+    .date-swipe-slide {
+      flex: 0 0 100%;
+      width: 100%;
+      min-width: 0;
+      background: var(--bg);
+    }
+
+    .date-swipe-slide .table-tools {
+      padding-top: 5px;
+    }
+
     .outline-button {
       border: 1px solid var(--accent);
       border-radius: 6px;
@@ -2424,15 +2465,21 @@
       </div>
     </header>
 
-    <section class="table-tools" id="tableTools">
-      <span class="export-status" id="exportStatus" aria-live="polite"></span>
-      <div id="tableArea"></div>
-    </section>
+    <div class="date-page-host" id="datePageHost">
+      <section class="table-tools" id="tableTools">
+        <span class="export-status" id="exportStatus" aria-live="polite"></span>
+        <div id="tableArea"></div>
+      </section>
 
-    <section id="recordsArea" aria-live="polite"></section>
-    <footer class="app-footer" id="appFooter">
-      <span class="app-footer-brand">Dotlog</span> · daily time log
-    </footer>
+      <section id="recordsArea" aria-live="polite"></section>
+      <footer class="app-footer" id="appFooter">
+        <span class="app-footer-brand">Dotlog</span> · daily time log
+      </footer>
+
+      <div class="date-swipe-overlay is-hidden" id="dateSwipeOverlay" aria-hidden="true">
+        <div class="date-swipe-track" id="dateSwipeTrack"></div>
+      </div>
+    </div>
     <section class="settings-view is-hidden" id="settingsView"></section>
 
     <div class="calendar-import-overlay is-hidden" id="calendarImportOverlay" role="dialog" aria-modal="true" aria-labelledby="calendarImportTitle">
@@ -2613,6 +2660,9 @@
     const tableArea = document.querySelector("#tableArea");
     const recordsArea = document.querySelector("#recordsArea");
     const appFooter = document.querySelector("#appFooter");
+    const datePageHost = document.querySelector("#datePageHost");
+    const dateSwipeOverlay = document.querySelector("#dateSwipeOverlay");
+    const dateSwipeTrack = document.querySelector("#dateSwipeTrack");
     const monthTitle = document.querySelector("#monthTitle");
     const monthMeta = document.querySelector("#monthMeta");
     const todayShortcut = document.querySelector("#todayShortcut");
@@ -2639,6 +2689,8 @@
     let pageSwipeAxis = null;
     let pageSwipeTracking = false;
     let pageSwipeAnimating = false;
+    let pageSwipeLockedScrollY = 0;
+    let pageSwipeScrollLocked = false;
     let tableExpanded = false;
     let openCategoryIndexes = [];
     let openTagIndexes = [];
@@ -3563,85 +3615,455 @@
       weekDays.style.opacity = "1";
     }
 
-    function getPageSwipeTargets() {
-      return [pageHeader, tableTools, recordsArea, appFooter];
+    function lockPageSwipeScroll() {
+      if (pageSwipeScrollLocked) return;
+      pageSwipeLockedScrollY = window.scrollY || window.pageYOffset || 0;
+      document.body.style.position = "fixed";
+      document.body.style.top = `-${pageSwipeLockedScrollY}px`;
+      document.body.style.left = "0";
+      document.body.style.right = "0";
+      document.body.style.width = "100%";
+      document.body.style.overflow = "hidden";
+      pageSwipeScrollLocked = true;
     }
 
-    function setPageSwipeVisuals(transform, transition = "none", opacity = "1") {
-      getPageSwipeTargets().forEach((node) => {
-        node.style.transition = transition;
-        node.style.transform = transform;
-        node.style.opacity = opacity;
-      });
+    function unlockPageSwipeScroll() {
+      if (!pageSwipeScrollLocked) return;
+      document.body.style.removeProperty("position");
+      document.body.style.removeProperty("top");
+      document.body.style.removeProperty("left");
+      document.body.style.removeProperty("right");
+      document.body.style.removeProperty("width");
+      document.body.style.removeProperty("overflow");
+      window.scrollTo(0, pageSwipeLockedScrollY);
+      pageSwipeScrollLocked = false;
     }
 
-    function clearPageSwipeVisuals() {
-      getPageSwipeTargets().forEach((node) => {
-        node.style.removeProperty("transition");
-        node.style.removeProperty("transform");
-        node.style.removeProperty("opacity");
+    function buildRenderedTable(records, date) {
+      const tableData = buildTimeRows(records, date);
+      if (tableData.rows.length === 0) {
+        return null;
+      }
+
+      const table = document.createElement("div");
+      table.className = "summary-table";
+
+      const tableWrap = document.createElement("div");
+      tableWrap.className = "table-wrap";
+
+      const timeTable = document.createElement("table");
+      timeTable.className = "time-table";
+      timeTable.innerHTML = `
+        <thead>
+          <tr>
+            <th class="col-index">#</th>
+            <th class="col-time">开始</th>
+            <th class="col-time">结束</th>
+            <th class="col-duration">时长</th>
+            <th class="col-category">分类</th>
+            <th class="col-tags">标签</th>
+            <th class="col-event">事件</th>
+            <th class="col-note">备注</th>
+          </tr>
+        </thead>
+      `;
+
+      const tbody = document.createElement("tbody");
+      tableData.rows.forEach((row) => {
+        const tr = document.createElement("tr");
+        const cells = [
+          row.index,
+          row.start,
+          row.end,
+          formatDuration(row.duration),
+          row,
+          row,
+          row,
+          row.note
+        ];
+
+        cells.forEach((value, cellIndex) => {
+          const td = document.createElement("td");
+
+          if (cellIndex === 4) {
+            if (value.category) {
+              td.append(createCategoryBadge(value.category));
+            } else {
+              const empty = document.createElement("span");
+              empty.className = "empty-category";
+              empty.textContent = "—";
+              td.append(empty);
+            }
+          } else if (cellIndex === 5) {
+            if (value.category && value.tags.length > 0) {
+              const tableLabels = document.createElement("div");
+              tableLabels.className = "label-stack";
+              tableLabels.style.justifyContent = "flex-start";
+              value.tags.forEach((tag) => {
+                tableLabels.append(createTagBadge(tag, value.category, -1));
+              });
+              td.append(tableLabels);
+            } else {
+              const empty = document.createElement("span");
+              empty.className = "empty-category";
+              empty.textContent = "—";
+              td.append(empty);
+            }
+          } else if (cellIndex === 6) {
+            td.textContent = value.text;
+          } else if (cellIndex === 7) {
+            if (value) {
+              td.className = "table-note";
+              td.textContent = value;
+            } else {
+              const empty = document.createElement("span");
+              empty.className = "empty-category";
+              empty.textContent = "—";
+              td.append(empty);
+            }
+          } else {
+            td.textContent = value;
+          }
+
+          tr.append(td);
+        });
+
+        tbody.append(tr);
       });
+
+      timeTable.append(tbody);
+      tableWrap.append(timeTable);
+
+      const total = document.createElement("p");
+      total.className = "table-total";
+      total.textContent = `合计：${formatDuration(tableData.totalMinutes)}（共 ${tableData.rows.length} 条）`;
+
+      table.append(tableWrap, total);
+      return table;
+    }
+
+    function buildDateRecordsContent(date, interactive = true) {
+      const records = loadRecords(date);
+
+      if (records.length === 0) {
+        const emptyWrap = document.createElement("div");
+        emptyWrap.className = "empty";
+        emptyWrap.innerHTML = `
+          <div>
+            <p class="empty-title">还没有记录</p>
+            <p class="empty-subtitle">发生了什么，就写下来</p>
+          </div>
+        `;
+        return emptyWrap;
+      }
+
+      const list = document.createElement("ul");
+      list.className = "list";
+      const groups = groupRecordsByPeriod(records);
+
+      periodOrder.forEach((period) => {
+        if (!groups[period]?.length) return;
+
+        const header = document.createElement("li");
+        header.className = "period-header";
+        header.textContent = period;
+        list.append(header);
+
+        groups[period].forEach(({ record, index }) => {
+          const item = document.createElement("li");
+          item.className = "record";
+          item.dataset.index = String(index);
+
+          const classificationDraft = interactive && (isCategoryOpen(index) || isTagOpen(index))
+            ? getClassificationDraft(index, record)
+            : interactive
+              ? classificationDrafts[index]
+              : null;
+          const displayCategory = classificationDraft ? classificationDraft.category : record.category;
+          const displayTags = classificationDraft ? classificationDraft.tags : record.tags;
+          const displayColor = displayCategory ? categoryColor(displayCategory) : null;
+          const interval = getRecordInterval(records, index, date);
+          const durationText = interval ? formatDuration(interval.duration) : "—";
+
+          const bar = document.createElement("div");
+          bar.className = "record-bar";
+          bar.style.background = displayColor || "var(--border)";
+
+          const body = document.createElement("div");
+          body.className = "record-body";
+
+          const mainRow = document.createElement("div");
+          mainRow.className = "record-main";
+
+          const title = document.createElement("span");
+          title.className = "record-title";
+          title.textContent = record.text;
+          mainRow.append(title);
+
+          if (displayTags.length > 0) {
+            const tags = document.createElement("span");
+            tags.className = "record-tags";
+            tags.textContent = displayTags.map((tag) => `#${tag}`).join(" ");
+            mainRow.append(tags);
+          }
+
+          const subRow = document.createElement("div");
+          subRow.className = "record-sub";
+
+          if (displayCategory) {
+            if (interactive) {
+              const category = document.createElement("button");
+              category.className = "record-category";
+              category.type = "button";
+              category.style.color = displayColor || "var(--muted)";
+              category.textContent = displayCategory;
+              category.addEventListener("click", () => {
+                openCategorySelection(index, record);
+              });
+              subRow.append(category);
+            } else {
+              const category = document.createElement("span");
+              category.className = "record-category";
+              category.style.color = displayColor || "var(--muted)";
+              category.textContent = displayCategory;
+              subRow.append(category);
+            }
+          }
+
+          const duration = document.createElement("span");
+          duration.className = "record-duration";
+          duration.textContent = displayCategory ? ` · ${durationText}` : durationText;
+          subRow.append(duration);
+
+          body.append(mainRow, subRow);
+
+          if (record.note) {
+            const note = document.createElement("div");
+            note.className = "record-note";
+            note.textContent = record.note;
+            body.append(note);
+          }
+
+          const time = document.createElement("div");
+          time.className = "record-time";
+
+          const startTime = document.createElement("span");
+          startTime.className = "record-time-start";
+          startTime.textContent = interval?.startTime || record.time;
+          if (interval?.isCrossDay) startTime.title = "前一天的开始时间";
+
+          if (interval) {
+            const endTime = document.createElement("span");
+            endTime.className = "record-time-end";
+            endTime.textContent = record.time;
+            time.append(endTime);
+          }
+
+          time.append(startTime);
+
+          if (interactive && editingRecordIndex !== index && canExtendRecordToNow(record, index, date)) {
+            const extendButton = document.createElement("button");
+            extendButton.className = "extend-to-now-button";
+            extendButton.type = "button";
+            extendButton.textContent = "⤴";
+            extendButton.setAttribute("aria-label", "延长到现在");
+            extendButton.title = "延长到现在";
+            extendButton.addEventListener("click", (event) => {
+              event.stopPropagation();
+              extendRecordToNow(index);
+            });
+            time.append(extendButton);
+          }
+
+          if (interactive && isCategoryOpen(index)) {
+            body.append(createCategoryPicker(record, index));
+          }
+
+          if (interactive && displayCategory && isTagOpen(index)) {
+            body.append(createTagPicker(record, index));
+          }
+
+          if (interactive && editingRecordIndex === index && editDraft) {
+            body.append(createEditPanel(index));
+          }
+
+          if (interactive) {
+            let longPressTriggered = false;
+            let longPressResetTimer = null;
+            item.addEventListener("touchstart", (event) => {
+              if (event.target.closest("button, input, select, textarea")) return;
+              clearTimeout(longPressTimer);
+              clearTimeout(longPressResetTimer);
+              longPressTriggered = false;
+              longPressTimer = setTimeout(() => {
+                longPressTriggered = true;
+                if (navigator.vibrate) navigator.vibrate(40);
+                openCtxMenu(index, record, item);
+              }, 500);
+            }, { passive: true });
+            item.addEventListener("touchend", () => {
+              clearTimeout(longPressTimer);
+              if (longPressTriggered) {
+                longPressResetTimer = setTimeout(() => {
+                  longPressTriggered = false;
+                }, 700);
+              }
+            }, { passive: true });
+            item.addEventListener("touchmove", () => {
+              clearTimeout(longPressTimer);
+            }, { passive: true });
+            item.addEventListener("touchcancel", () => {
+              clearTimeout(longPressTimer);
+              longPressTriggered = false;
+            }, { passive: true });
+            item.addEventListener("click", (event) => {
+              if (!longPressTriggered) return;
+              event.preventDefault();
+              event.stopPropagation();
+              longPressTriggered = false;
+            });
+            item.addEventListener("contextmenu", (event) => {
+              event.preventDefault();
+              openCtxMenu(index, record, item);
+            });
+          }
+
+          item.append(bar, body, time);
+          list.append(item);
+
+          if (interval?.gapMinutes > 0) {
+            const gap = document.createElement("li");
+            gap.className = "record-gap";
+            gap.setAttribute("aria-label", `空白时间 ${formatDuration(interval.gapMinutes)}`);
+            const spacer = document.createElement("span");
+            const gapDuration = document.createElement("span");
+            gapDuration.className = "record-gap-duration";
+            gapDuration.textContent = `空白 ${formatDuration(interval.gapMinutes)}`;
+            gap.append(spacer, gapDuration);
+            list.append(gap);
+          }
+        });
+      });
+
+      return list;
+    }
+
+    function renderDatePageContent(date, interactive = true, includeTable = tableExpanded) {
+      const records = loadRecords(date);
+      const tableContent = includeTable ? buildRenderedTable(records, date) : null;
+      const recordsContent = buildDateRecordsContent(date, interactive);
+      const summaryText = summaryTextForRecords(records, date);
+      return { records, tableContent, recordsContent, summaryText };
+    }
+
+    function createDateSwipeSlide(date, includeTable = false) {
+      const slide = document.createElement("div");
+      slide.className = "date-swipe-slide";
+      const content = renderDatePageContent(date, false, includeTable);
+
+      const tools = document.createElement("section");
+      tools.className = "table-tools";
+      const status = document.createElement("span");
+      status.className = "export-status";
+      status.setAttribute("aria-hidden", "true");
+      const tableHolder = document.createElement("div");
+      if (content.tableContent) tableHolder.append(content.tableContent);
+      tools.append(status, tableHolder);
+
+      const recordsSection = document.createElement("section");
+      recordsSection.append(content.recordsContent);
+
+      const footer = document.createElement("footer");
+      footer.className = "app-footer";
+      footer.innerHTML = `<span class="app-footer-brand">Dotlog</span> · daily time log`;
+
+      slide.append(tools, recordsSection, footer);
+      return slide;
+    }
+
+    function preparePageSwipeOverlay() {
+      dateSwipeTrack.replaceChildren(
+        createDateSwipeSlide(offsetDate(viewedDate, -1), false),
+        createDateSwipeSlide(viewedDate, tableExpanded),
+        createDateSwipeSlide(offsetDate(viewedDate, 1), false)
+      );
+      datePageHost.classList.add("is-swipe-previewing");
+      dateSwipeOverlay.classList.remove("is-hidden");
+      const width = Math.max(datePageHost.clientWidth, 1);
+      dateSwipeTrack.style.transition = "none";
+      dateSwipeTrack.style.transform = `translate3d(${-width}px, 0, 0)`;
+      pageSwipeCurrentX = 0;
+    }
+
+    function resetPageSwipeOverlay() {
+      dateSwipeTrack.style.transition = "none";
+      dateSwipeTrack.style.transform = "";
+      dateSwipeTrack.replaceChildren();
+      dateSwipeOverlay.classList.add("is-hidden");
+      datePageHost.classList.remove("is-swipe-previewing");
+      pageSwipeCurrentX = 0;
+    }
+
+    function setPageSwipeTrack(offsetX, transition = "none") {
+      const width = Math.max(datePageHost.clientWidth, 1);
+      dateSwipeTrack.style.transition = transition;
+      dateSwipeTrack.style.transform = `translate3d(${offsetX - width}px, 0, 0)`;
+      pageSwipeCurrentX = offsetX;
     }
 
     function resetPageSwipePosition(animate = true) {
-      pageSwipeCurrentX = 0;
-      setPageSwipeVisuals(
-        "translate3d(0, 0, 0)",
-        animate ? "transform 0.26s cubic-bezier(0.22, 0.72, 0.2, 1), opacity 0.22s ease" : "none",
-        "1"
+      if (dateSwipeOverlay.classList.contains("is-hidden")) return;
+      setPageSwipeTrack(
+        0,
+        animate ? "transform 0.26s cubic-bezier(0.22, 0.72, 0.2, 1)" : "none"
       );
+
       if (animate) {
         setTimeout(() => {
           if (pageSwipeAnimating || pageSwipeTracking) return;
-          clearPageSwipeVisuals();
+          resetPageSwipeOverlay();
+          unlockPageSwipeScroll();
         }, 280);
       } else {
-        clearPageSwipeVisuals();
+        resetPageSwipeOverlay();
+        unlockPageSwipeScroll();
       }
     }
 
     function finishPageSwipe(dayOffset, exitDirection) {
       if (pageSwipeAnimating) return;
       pageSwipeAnimating = true;
-      const width = Math.max(window.innerWidth, page.clientWidth, 1);
+      const width = Math.max(datePageHost.clientWidth, 1);
       const startX = Math.max(-width, Math.min(width, pageSwipeCurrentX));
       const targetX = exitDirection * width;
       const remainingRatio = Math.min(1, Math.abs(targetX - startX) / width);
-      const duration = Math.max(120, Math.round(220 * remainingRatio));
+      const duration = Math.max(110, Math.round(210 * remainingRatio));
 
-      setPageSwipeVisuals(`translate3d(${startX}px, 0, 0)`, "none", "1");
+      setPageSwipeTrack(startX, "none");
 
       requestAnimationFrame(() => {
         let completed = false;
-        let fallbackTimer = null;
-        const finishTransition = () => {
-          if (completed) return;
+        let completionTimer = null;
+        const finishSwipe = (event) => {
+          if (completed || (event && (event.target !== dateSwipeTrack || event.propertyName !== "transform"))) return;
           completed = true;
-          if (fallbackTimer !== null) clearTimeout(fallbackTimer);
+          dateSwipeTrack.removeEventListener("transitionend", finishSwipe);
+          if (completionTimer !== null) clearTimeout(completionTimer);
 
           setViewedDate(offsetDate(viewedDate, dayOffset));
-          setPageSwipeVisuals(`translate3d(${-exitDirection * 34}px, 0, 0)`, "none", "0.82");
-
           requestAnimationFrame(() => {
-            setPageSwipeVisuals(
-              "translate3d(0, 0, 0)",
-              "transform 0.18s cubic-bezier(0.22, 0.72, 0.2, 1), opacity 0.16s ease",
-              "1"
-            );
-            setTimeout(() => {
-              pageSwipeAnimating = false;
-              clearPageSwipeVisuals();
-            }, 210);
+            resetPageSwipeOverlay();
+            unlockPageSwipeScroll();
+            pageSwipeAnimating = false;
           });
         };
 
-        setPageSwipeVisuals(
-          `translate3d(${targetX}px, 0, 0)`,
-          `transform ${duration}ms cubic-bezier(0.22, 0.72, 0.2, 1), opacity ${Math.max(120, duration - 20)}ms ease`,
-          "0.82"
+        dateSwipeTrack.addEventListener("transitionend", finishSwipe);
+        setPageSwipeTrack(
+          targetX,
+          `transform ${duration}ms cubic-bezier(0.22, 0.72, 0.2, 1)`
         );
-        pageSwipeCurrentX = targetX;
-        fallbackTimer = setTimeout(finishTransition, duration + 80);
+        completionTimer = setTimeout(() => finishSwipe(), duration + 120);
       });
     }
 
@@ -5187,210 +5609,17 @@
     }
 
     function render() {
-      const records = loadRecords(viewedDate);
+      const content = renderDatePageContent(viewedDate);
       const viewingToday = isToday(viewedDate);
 
       renderWeekNav();
       todayShortcut.classList.toggle("is-hidden", viewingToday);
       fab.classList.toggle("is-hidden", settingsMode !== "main");
-      monthMeta.textContent = summaryTextForRecords(records, viewedDate);
+      monthMeta.textContent = content.summaryText;
       updateSyncIndicators();
 
-      if (!tableExpanded) {
-        tableArea.replaceChildren();
-      } else {
-        renderTimeTable(records);
-      }
-
-      if (records.length === 0) {
-        recordsArea.innerHTML = `
-          <div class="empty">
-            <div>
-              <p class="empty-title">还没有记录</p>
-              <p class="empty-subtitle">发生了什么，就写下来</p>
-            </div>
-          </div>
-        `;
-        return;
-      }
-
-      const list = document.createElement("ul");
-      list.className = "list";
-      const groups = groupRecordsByPeriod(records);
-
-      periodOrder.forEach((period) => {
-        if (!groups[period]?.length) return;
-
-        const header = document.createElement("li");
-        header.className = "period-header";
-        header.textContent = period;
-        list.append(header);
-
-        groups[period].forEach(({ record, index }) => {
-        const item = document.createElement("li");
-        item.className = "record";
-        item.dataset.index = String(index);
-
-        const classificationDraft = isCategoryOpen(index) || isTagOpen(index)
-          ? getClassificationDraft(index, record)
-          : classificationDrafts[index];
-        const displayCategory = classificationDraft ? classificationDraft.category : record.category;
-        const displayTags = classificationDraft ? classificationDraft.tags : record.tags;
-        const displayColor = displayCategory ? categoryColor(displayCategory) : null;
-        const interval = getRecordInterval(records, index, viewedDate);
-        const durationText = interval ? formatDuration(interval.duration) : "—";
-
-        const bar = document.createElement("div");
-        bar.className = "record-bar";
-        bar.style.background = displayColor || "var(--border)";
-
-        const body = document.createElement("div");
-        body.className = "record-body";
-
-        const mainRow = document.createElement("div");
-        mainRow.className = "record-main";
-
-        const title = document.createElement("span");
-        title.className = "record-title";
-        title.textContent = record.text;
-        mainRow.append(title);
-
-        if (displayTags.length > 0) {
-          const tags = document.createElement("span");
-          tags.className = "record-tags";
-          tags.textContent = displayTags.map((tag) => `#${tag}`).join(" ");
-          mainRow.append(tags);
-        }
-
-        const subRow = document.createElement("div");
-        subRow.className = "record-sub";
-
-        if (displayCategory) {
-          const category = document.createElement("button");
-          category.className = "record-category";
-          category.type = "button";
-          category.style.color = displayColor || "var(--muted)";
-          category.textContent = displayCategory;
-          category.addEventListener("click", () => {
-            openCategorySelection(index, record);
-          });
-          subRow.append(category);
-        }
-
-        const duration = document.createElement("span");
-        duration.className = "record-duration";
-        duration.textContent = displayCategory ? ` · ${durationText}` : durationText;
-        subRow.append(duration);
-
-        body.append(mainRow, subRow);
-
-        if (record.note) {
-          const note = document.createElement("div");
-          note.className = "record-note";
-          note.textContent = record.note;
-          body.append(note);
-        }
-
-        const time = document.createElement("div");
-        time.className = "record-time";
-
-        const startTime = document.createElement("span");
-        startTime.className = "record-time-start";
-        startTime.textContent = interval?.startTime || record.time;
-        if (interval?.isCrossDay) startTime.title = "前一天的开始时间";
-
-        if (interval) {
-          const endTime = document.createElement("span");
-          endTime.className = "record-time-end";
-          endTime.textContent = record.time;
-          time.append(endTime);
-        }
-
-        time.append(startTime);
-
-        if (editingRecordIndex !== index && canExtendRecordToNow(record, index, viewedDate)) {
-          const extendButton = document.createElement("button");
-          extendButton.className = "extend-to-now-button";
-          extendButton.type = "button";
-          extendButton.textContent = "⤴";
-          extendButton.setAttribute("aria-label", "延长到现在");
-          extendButton.title = "延长到现在";
-          extendButton.addEventListener("click", (event) => {
-            event.stopPropagation();
-            extendRecordToNow(index);
-          });
-          time.append(extendButton);
-        }
-
-        if (isCategoryOpen(index)) {
-          body.append(createCategoryPicker(record, index));
-        }
-
-        if (displayCategory && isTagOpen(index)) {
-          body.append(createTagPicker(record, index));
-        }
-
-        if (editingRecordIndex === index && editDraft) {
-          body.append(createEditPanel(index));
-        }
-
-        let longPressTriggered = false;
-        let longPressResetTimer = null;
-        item.addEventListener("touchstart", (event) => {
-          if (event.target.closest("button, input, select, textarea")) return;
-          clearTimeout(longPressTimer);
-          clearTimeout(longPressResetTimer);
-          longPressTriggered = false;
-          longPressTimer = setTimeout(() => {
-            longPressTriggered = true;
-            if (navigator.vibrate) navigator.vibrate(40);
-            openCtxMenu(index, record, item);
-          }, 500);
-        }, { passive: true });
-        item.addEventListener("touchend", () => {
-          clearTimeout(longPressTimer);
-          if (longPressTriggered) {
-            longPressResetTimer = setTimeout(() => {
-              longPressTriggered = false;
-            }, 700);
-          }
-        }, { passive: true });
-        item.addEventListener("touchmove", () => {
-          clearTimeout(longPressTimer);
-        }, { passive: true });
-        item.addEventListener("touchcancel", () => {
-          clearTimeout(longPressTimer);
-          longPressTriggered = false;
-        }, { passive: true });
-        item.addEventListener("click", (event) => {
-          if (!longPressTriggered) return;
-          event.preventDefault();
-          event.stopPropagation();
-          longPressTriggered = false;
-        });
-        item.addEventListener("contextmenu", (event) => {
-          event.preventDefault();
-          openCtxMenu(index, record, item);
-        });
-
-        item.append(bar, body, time);
-
-          list.append(item);
-          if (interval?.gapMinutes > 0) {
-            const gap = document.createElement("li");
-            gap.className = "record-gap";
-            gap.setAttribute("aria-label", `空白时间 ${formatDuration(interval.gapMinutes)}`);
-            const spacer = document.createElement("span");
-            const gapDuration = document.createElement("span");
-            gapDuration.className = "record-gap-duration";
-            gapDuration.textContent = `空白 ${formatDuration(interval.gapMinutes)}`;
-            gap.append(spacer, gapDuration);
-            list.append(gap);
-          }
-        });
-      });
-
-      recordsArea.replaceChildren(list);
+      tableArea.replaceChildren(...(content.tableContent ? [content.tableContent] : []));
+      recordsArea.replaceChildren(content.recordsContent);
     }
 
     function buildTimeRows(records, date) {
@@ -5487,107 +5716,12 @@
     }
 
     function renderTimeTable(records) {
-      const tableData = buildTimeRows(records, viewedDate);
-      if (tableData.rows.length === 0) {
+      const table = buildRenderedTable(records, viewedDate);
+      if (!table) {
         tableArea.replaceChildren();
         tableExpanded = false;
         return;
       }
-
-      const table = document.createElement("div");
-      table.className = "summary-table";
-
-      const tableWrap = document.createElement("div");
-      tableWrap.className = "table-wrap";
-
-      const timeTable = document.createElement("table");
-      timeTable.className = "time-table";
-      timeTable.innerHTML = `
-        <thead>
-          <tr>
-            <th class="col-index">#</th>
-            <th class="col-time">开始</th>
-            <th class="col-time">结束</th>
-            <th class="col-duration">时长</th>
-            <th class="col-category">分类</th>
-            <th class="col-tags">标签</th>
-            <th class="col-event">事件</th>
-            <th class="col-note">备注</th>
-          </tr>
-        </thead>
-      `;
-
-      const tbody = document.createElement("tbody");
-      tableData.rows.forEach((row) => {
-        const tr = document.createElement("tr");
-        const cells = [
-          row.index,
-          row.start,
-          row.end,
-          formatDuration(row.duration),
-          row,
-          row,
-          row,
-          row.note
-        ];
-
-        cells.forEach((value, cellIndex) => {
-          const td = document.createElement("td");
-
-          if (cellIndex === 4) {
-            if (value.category) {
-              td.append(createCategoryBadge(value.category));
-            } else {
-              const empty = document.createElement("span");
-              empty.className = "empty-category";
-              empty.textContent = "—";
-              td.append(empty);
-            }
-          } else if (cellIndex === 5) {
-            if (value.category && value.tags.length > 0) {
-              const tableLabels = document.createElement("div");
-              tableLabels.className = "label-stack";
-              tableLabels.style.justifyContent = "flex-start";
-              value.tags.forEach((tag) => {
-                tableLabels.append(createTagBadge(tag, value.category, -1));
-              });
-              td.append(tableLabels);
-            } else {
-              const empty = document.createElement("span");
-              empty.className = "empty-category";
-              empty.textContent = "—";
-              td.append(empty);
-            }
-          } else if (cellIndex === 6) {
-            td.textContent = value.text;
-          } else if (cellIndex === 7) {
-            if (value) {
-              td.className = "table-note";
-              td.textContent = value;
-            } else {
-              const empty = document.createElement("span");
-              empty.className = "empty-category";
-              empty.textContent = "—";
-              td.append(empty);
-            }
-          } else {
-            td.textContent = value;
-          }
-
-          tr.append(td);
-        });
-
-        tbody.append(tr);
-      });
-
-      timeTable.append(tbody);
-      tableWrap.append(timeTable);
-
-      const total = document.createElement("p");
-      total.className = "table-total";
-      total.textContent = `合计：${formatDuration(tableData.totalMinutes)}（共 ${tableData.rows.length} 条）`;
-
-      table.append(tableWrap, total);
       tableArea.replaceChildren(table);
     }
 
@@ -6557,11 +6691,15 @@
       }
       if (pageSwipeAxis !== "horizontal") return;
 
-      const width = Math.max(window.innerWidth, page.clientWidth, 1);
-      const maxDrag = width * 0.34;
+      if (dateSwipeOverlay.classList.contains("is-hidden")) {
+        lockPageSwipeScroll();
+        preparePageSwipeOverlay();
+      }
+
+      const width = Math.max(datePageHost.clientWidth, 1);
+      const maxDrag = width * 0.92;
       const displayX = Math.sign(deltaX) * Math.min(Math.abs(deltaX), maxDrag);
-      setPageSwipeVisuals(`translate3d(${displayX}px, 0, 0)`, "none", "1");
-      pageSwipeCurrentX = displayX;
+      setPageSwipeTrack(displayX, "none");
     }, { passive: true });
 
     page.addEventListener("touchend", (event) => {
@@ -6573,7 +6711,7 @@
       }
 
       if (pageSwipeAxis === "horizontal") {
-        const threshold = Math.max(54, window.innerWidth * 0.14);
+        const threshold = Math.max(54, datePageHost.clientWidth * 0.16);
         if (deltaX <= -threshold) {
           finishPageSwipe(1, -1);
         } else if (deltaX >= threshold) {
