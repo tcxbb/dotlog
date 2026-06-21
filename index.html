@@ -2726,7 +2726,7 @@
     let openCategoryIndexes = [];
     let openTagIndexes = [];
     let classificationDrafts = {};
-    let entryClassificationDraft = { category: null, tags: [] };
+    let entryClassificationDraft = { category: null, tags: [], categoryId: null, tagIds: [] };
     let dismissedEntrySuggestionKey = null;
     let entryStartTimeTouched = false;
     let exportStatusTimer = null;
@@ -3202,6 +3202,76 @@
       return findCategoryByName(categoryName);
     }
 
+    function normalizeReferenceId(value) {
+      const id = typeof value === "string" ? value.trim() : "";
+      return id || null;
+    }
+
+    function mapTagIdsByName(tags, tagIds) {
+      const tagIdMap = new Map();
+      if (!Array.isArray(tags)) return tagIdMap;
+
+      tags.forEach((tagName, index) => {
+        const safeTagName = typeof tagName === "string" ? tagName.trim() : "";
+        const tagId = normalizeReferenceId(Array.isArray(tagIds) ? tagIds[index] : null);
+        if (safeTagName && tagId && !tagIdMap.has(safeTagName)) {
+          tagIdMap.set(safeTagName, tagId);
+        }
+      });
+
+      return tagIdMap;
+    }
+
+    function resolveClassificationFields(classification, fallbackRecord = null) {
+      const category = typeof classification?.category === "string"
+        ? classification.category.trim()
+        : "";
+      const safeCategory = category || null;
+      const tags = safeCategory
+        ? [...new Set((Array.isArray(classification?.tags) ? classification.tags : [])
+          .map((tag) => String(tag).trim())
+          .filter(Boolean))]
+        : [];
+
+      if (!safeCategory) {
+        return {
+          category: null,
+          tags: [],
+          categoryId: null,
+          tagIds: []
+        };
+      }
+
+      const matchedCategory = findCategoryByName(safeCategory);
+      const fallbackCategoryId = fallbackRecord?.category === safeCategory
+        ? normalizeReferenceId(fallbackRecord.categoryId)
+        : null;
+      const categoryId = matchedCategory?.id
+        || normalizeReferenceId(classification?.categoryId)
+        || fallbackCategoryId
+        || null;
+
+      const classificationTagIdMap = mapTagIdsByName(tags, classification?.tagIds);
+      const fallbackTagIdMap = fallbackRecord?.category === safeCategory
+        ? mapTagIdsByName(fallbackRecord.tags, fallbackRecord.tagIds)
+        : new Map();
+      const tagIds = tags.map((tagName, index) => {
+        const matchedTag = findTagByName(safeCategory, tagName);
+        if (matchedTag?.tag?.id) return matchedTag.tag.id;
+        return normalizeReferenceId(Array.isArray(classification?.tagIds) ? classification.tagIds[index] : null)
+          || classificationTagIdMap.get(tagName)
+          || fallbackTagIdMap.get(tagName)
+          || null;
+      }).filter(Boolean);
+
+      return {
+        category: safeCategory,
+        tags,
+        categoryId,
+        tagIds
+      };
+    }
+
     function getCategoryTags(categoryName) {
       const category = findCategory(categoryName);
       return category ? category.tags.map((tag) => tag.name) : [];
@@ -3419,8 +3489,12 @@
         startTime: isValidTimeInput(record.startTime || "") ? record.startTime : null,
         text: record.text,
         category: record.category || null,
+        categoryId: normalizeReferenceId(record.categoryId),
         note: record.note || null,
         tags: Array.isArray(record.tags) ? record.tags : [],
+        tagIds: Array.isArray(record.tagIds)
+          ? record.tagIds.map((tagId) => normalizeReferenceId(tagId)).filter(Boolean)
+          : [],
         isBackfill: record.isBackfill || false,
         isSplit: record.isSplit || false
       };
@@ -4582,7 +4656,9 @@
       if (!classificationDrafts[index]) {
         classificationDrafts[index] = {
           category: record.category || null,
-          tags: Array.isArray(record.tags) ? [...record.tags] : []
+          tags: Array.isArray(record.tags) ? [...record.tags] : [],
+          categoryId: normalizeReferenceId(record.categoryId),
+          tagIds: Array.isArray(record.tagIds) ? [...record.tagIds] : []
         };
       }
 
@@ -4603,8 +4679,15 @@
       const records = loadRecords(viewedDate);
       if (!records[index]) return;
 
-      records[index].category = draft.category || null;
-      records[index].tags = draft.category ? [...draft.tags] : [];
+      Object.assign(
+        records[index],
+        resolveClassificationFields({
+          category: draft.category,
+          tags: draft.category ? [...draft.tags] : [],
+          categoryId: draft.categoryId,
+          tagIds: draft.tagIds
+        }, records[index])
+      );
       saveRecords(viewedDate, records);
       delete classificationDrafts[index];
       openCategoryIndexes = openCategoryIndexes.filter((itemIndex) => itemIndex !== index);
@@ -4630,8 +4713,15 @@
       const records = loadRecords(date);
       if (!records[index]) return;
 
-      records[index].category = category;
-      records[index].tags = [];
+      Object.assign(
+        records[index],
+        resolveClassificationFields({
+          category,
+          tags: [],
+          categoryId: findCategoryByName(category)?.id || null,
+          tagIds: []
+        }, records[index])
+      );
       saveRecords(date, records);
       delete classificationDrafts[index];
       openCategoryIndexes = [...new Set([...openCategoryIndexes, index])];
@@ -4645,7 +4735,15 @@
       const records = loadRecords(date);
       if (!records[index]) return;
 
-      records[index].tags = tags;
+      Object.assign(
+        records[index],
+        resolveClassificationFields({
+          category: records[index].category,
+          tags,
+          categoryId: records[index].categoryId,
+          tagIds: records[index].tagIds
+        }, records[index])
+      );
       saveRecords(date, records);
       delete classificationDrafts[index];
       openTagIndexes = keepPickerOpen
@@ -4747,8 +4845,12 @@
             return;
           }
 
-          draft.category = category.name;
-          draft.tags = [];
+          Object.assign(draft, resolveClassificationFields({
+            category: category.name,
+            tags: [],
+            categoryId: category.id,
+            tagIds: []
+          }, record));
           openTagIndexes = [...new Set([...openTagIndexes, index])];
           render();
         });
@@ -4761,8 +4863,12 @@
         clearButton.type = "button";
         clearButton.textContent = "清除";
         clearButton.addEventListener("click", () => {
-          draft.category = null;
-          draft.tags = [];
+          Object.assign(draft, resolveClassificationFields({
+            category: null,
+            tags: [],
+            categoryId: null,
+            tagIds: []
+          }, record));
           commitClassificationDraft(index);
         });
         picker.append(clearButton);
@@ -4810,9 +4916,15 @@
         }
 
         button.addEventListener("click", () => {
-          draft.tags = draft.tags.includes(tag)
+          const nextTags = draft.tags.includes(tag)
             ? draft.tags.filter((item) => item !== tag)
             : [...draft.tags, tag];
+          Object.assign(draft, resolveClassificationFields({
+            category: activeCategory,
+            tags: nextTags,
+            categoryId: draft.categoryId,
+            tagIds: draft.tagIds
+          }, record));
           render();
         });
 
@@ -4852,6 +4964,8 @@
         note: record.note || "",
         category: record.category || null,
         tags: Array.isArray(record.tags) ? [...record.tags] : [],
+        categoryId: normalizeReferenceId(record.categoryId),
+        tagIds: Array.isArray(record.tagIds) ? [...record.tagIds] : [],
         isBackfill: record.isBackfill || false,
         isSplit: record.isSplit || false
       };
@@ -4953,15 +5067,20 @@
       }
 
       records[index] = {
+        ...original,
         id: original.id,
         startTime: editDraft.startTime,
         time: editDraft.time,
         text: editDraft.text.trim(),
-        category: editDraft.category || null,
         note: editDraft.note.trim() || null,
-        tags: editDraft.category ? [...editDraft.tags] : [],
         isBackfill: original.isBackfill || false,
-        isSplit: original.isSplit || false
+        isSplit: original.isSplit || false,
+        ...resolveClassificationFields({
+          category: editDraft.category,
+          tags: editDraft.category ? [...editDraft.tags] : [],
+          categoryId: editDraft.categoryId,
+          tagIds: editDraft.tagIds
+        }, original)
       };
 
       saveRecords(viewedDate, sortRecords(records));
@@ -5065,8 +5184,12 @@
         getCategories().forEach((category) => {
           const selected = editDraft.category === category.name;
           categoryOptions.append(createEditChoiceButton(category.name, "category", selected, category.color, () => {
-            editDraft.category = selected ? null : category.name;
-            editDraft.tags = [];
+            Object.assign(editDraft, resolveClassificationFields({
+              category: selected ? null : category.name,
+              tags: [],
+              categoryId: selected ? null : category.id,
+              tagIds: []
+            }));
             editCategoryExpanded = false;
             render();
           }));
@@ -5109,9 +5232,15 @@
           getCategoryTags(editDraft.category).forEach((tag) => {
             const selected = editDraft.tags.includes(tag);
             tagOptions.append(createEditChoiceButton(tag, "tag", selected, categoryColor(editDraft.category), () => {
-              editDraft.tags = selected
+              const nextTags = selected
                 ? editDraft.tags.filter((item) => item !== tag)
                 : [...editDraft.tags, tag];
+              Object.assign(editDraft, resolveClassificationFields({
+                category: editDraft.category,
+                tags: nextTags,
+                categoryId: editDraft.categoryId,
+                tagIds: editDraft.tagIds
+              }));
               render();
             }));
           });
@@ -6481,7 +6610,11 @@
     }
 
     function insertNewRecords(date, newRecords) {
-      const records = sortRecords([...newRecords, ...loadRecords(date)]);
+      const resolvedNewRecords = newRecords.map((record) => ({
+        ...record,
+        ...resolveClassificationFields(record)
+      }));
+      const records = sortRecords([...resolvedNewRecords, ...loadRecords(date)]);
       saveRecords(date, records);
       openCategoryIndexes = [];
       openTagIndexes = [];
@@ -6510,7 +6643,9 @@
             if (bestMatch && trigger.length <= bestMatch.trigger.length) return;
             bestMatch = {
               categoryName: category.name,
+              categoryId: category.id,
               tagName: tag.name,
+              tagId: tag.id,
               trigger,
               key: JSON.stringify([category.name, tag.name, trigger])
             };
@@ -6542,12 +6677,23 @@
         const tags = entryClassificationDraft.tags.includes(suggestion.tagName)
           ? [...entryClassificationDraft.tags]
           : [...entryClassificationDraft.tags, suggestion.tagName];
-        entryClassificationDraft = { category: suggestion.categoryName, tags };
-      } else {
-        entryClassificationDraft = {
+        entryClassificationDraft = resolveClassificationFields({
           category: suggestion.categoryName,
-          tags: [suggestion.tagName]
-        };
+          tags,
+          categoryId: suggestion.categoryId,
+          tagIds: tags.map((tagName, index) => (
+            tagName === suggestion.tagName
+              ? suggestion.tagId
+              : Array.isArray(entryClassificationDraft.tagIds) ? entryClassificationDraft.tagIds[index] : null
+          ))
+        });
+      } else {
+        entryClassificationDraft = resolveClassificationFields({
+          category: suggestion.categoryName,
+          tags: [suggestion.tagName],
+          categoryId: suggestion.categoryId,
+          tagIds: [suggestion.tagId]
+        });
       }
 
       dismissedEntrySuggestionKey = suggestion.key;
@@ -6588,10 +6734,12 @@
 
         button.addEventListener("click", () => {
           const selectingCurrent = entryClassificationDraft.category === category.name;
-          entryClassificationDraft = {
+          entryClassificationDraft = resolveClassificationFields({
             category: selectingCurrent ? null : category.name,
-            tags: []
-          };
+            tags: [],
+            categoryId: selectingCurrent ? null : category.id,
+            tagIds: []
+          });
           renderEntryClassification();
         });
         categoryOptions.append(button);
@@ -6629,9 +6777,15 @@
           }
 
           button.addEventListener("click", () => {
-            entryClassificationDraft.tags = entryClassificationDraft.tags.includes(tag)
+            const nextTags = entryClassificationDraft.tags.includes(tag)
               ? entryClassificationDraft.tags.filter((item) => item !== tag)
               : [...entryClassificationDraft.tags, tag];
+            entryClassificationDraft = resolveClassificationFields({
+              category: entryClassificationDraft.category,
+              tags: nextTags,
+              categoryId: entryClassificationDraft.categoryId,
+              tagIds: entryClassificationDraft.tagIds
+            });
             renderEntryClassification();
           });
           tagOptions.append(button);
@@ -6645,15 +6799,17 @@
     }
 
     function resetEntryClassification() {
-      entryClassificationDraft = { category: null, tags: [] };
+      entryClassificationDraft = { category: null, tags: [], categoryId: null, tagIds: [] };
       renderEntryClassification();
     }
 
     function entryClassificationFields() {
-      return {
+      return resolveClassificationFields({
         category: entryClassificationDraft.category,
-        tags: entryClassificationDraft.category ? [...entryClassificationDraft.tags] : []
-      };
+        tags: entryClassificationDraft.category ? [...entryClassificationDraft.tags] : [],
+        categoryId: entryClassificationDraft.categoryId,
+        tagIds: entryClassificationDraft.tagIds
+      });
     }
 
     function activeEntryTiming() {
