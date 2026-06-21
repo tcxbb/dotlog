@@ -3813,8 +3813,9 @@
     }
 
     function summaryForRecord(record) {
-      if (!record.tags.length) return record.text;
-      return `${record.text} ${record.tags.map((tag) => `#${tag}`).join(" ")}`;
+      const tagNames = resolveRecordTagNames(record);
+      if (!tagNames.length) return record.text;
+      return `${record.text} ${tagNames.map((tag) => `#${tag}`).join(" ")}`;
     }
 
     function createEventUid() {
@@ -6626,16 +6627,18 @@
         const interval = getRecordInterval(records, descendingIndex, date);
         if (!interval) return null;
         totalMinutes += interval.duration;
+        const categoryName = resolveRecordCategoryName(record);
+        const tagNames = resolveRecordTagNames(record);
 
         return {
           index: index + 1,
           start: interval.startTime,
           end: record.time,
           duration: interval.duration,
-          category: record.category,
-          tags: record.tags,
-          displayCategory: resolveRecordCategoryName(record),
-          displayTags: resolveRecordTagNames(record),
+          category: categoryName,
+          tags: tagNames,
+          displayCategory: categoryName,
+          displayTags: tagNames,
           text: record.text,
           note: record.note,
           isBackfill: record.isBackfill,
@@ -6731,7 +6734,8 @@
         const descendingIndex = records.length - 1 - index;
         const interval = getRecordInterval(records, descendingIndex, date);
         if (!interval) return;
-        if (!record.category) return;
+        const categoryName = resolveRecordCategoryName(record);
+        if (!categoryName) return;
 
         const event = [
           "BEGIN:VEVENT",
@@ -6743,11 +6747,11 @@
           "END:VEVENT"
         ].filter(Boolean).join("\r\n");
 
-        if (!eventsByCategory[record.category]) {
-          eventsByCategory[record.category] = [];
+        if (!eventsByCategory[categoryName]) {
+          eventsByCategory[categoryName] = [];
         }
 
-        eventsByCategory[record.category].push(event);
+        eventsByCategory[categoryName].push(event);
         eventCount += 1;
       });
 
@@ -6988,7 +6992,7 @@
     function openCalendarImportPanel() {
       const records = loadRecords(viewedDate);
 
-      if (!records.some((record) => record.category)) {
+      if (!records.some((record) => resolveRecordCategoryName(record))) {
         alert("请先为至少一条记录选择分类");
         return;
       }
