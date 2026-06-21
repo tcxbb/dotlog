@@ -2650,8 +2650,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
-    const APP_VERSION = "v1.4.8";
-    const APP_BUILD_TIME = "2026-06-22 00:30";
+    const APP_VERSION = "v1.4.9";
+    const APP_BUILD_TIME = "2026-06-22 00:40";
 
     const entryForm = document.querySelector("#entryForm");
     const entryInput = document.querySelector("#entryInput");
@@ -4513,6 +4513,24 @@
       return uniqueIds.length === expectedDifference ? uniqueIds : [];
     }
 
+    function createManualSyncBackup(localData, remoteData) {
+      const createdAt = new Date().toISOString();
+      const backupKey = `backup_before_manual_sync_${createdAt.replace(/[:.]/g, "-")}`;
+      try {
+        localStorage.setItem(backupKey, JSON.stringify({
+          createdAt,
+          reason: "confirmed-local-snapshot-override",
+          localData,
+          remoteData
+        }));
+        console.info("[Dotlog] 手动同步前完整备份已创建", backupKey);
+        return backupKey;
+      } catch (error) {
+        console.error("[Dotlog] 手动同步前备份失败，已阻止覆盖", error);
+        return null;
+      }
+    }
+
     function isCurrentGistInitialized() {
       const { gistId } = getGistSettings();
       return Boolean(gistId && localStorage.getItem("dotlog_sync_initialized_gist") === gistId);
@@ -4661,6 +4679,7 @@
       if (error.message === "RECORD_COUNT_REGRESSION") return "● 检测到记录减少，已阻止同步";
       if (error.message === "NORMALIZE_RECORD_COUNT_REGRESSION") return "● 数据转换数量异常，已阻止同步";
       if (error.message === "SCHEMA_BACKUP_NOT_READY") return "● 数据备份失败，已阻止同步";
+      if (error.message === "MANUAL_SYNC_BACKUP_FAILED") return "● 手动同步备份失败，已阻止同步";
       return "● 无法连接，请检查网络";
     }
 
@@ -4716,18 +4735,32 @@
           if (remainingRegressions.length > 0) {
             const remoteOnlyIds = findConfirmableRemoteOnlyRecordIds(localData, remoteData);
             if (remoteOnlyIds.length === 0) {
-              throw new Error("RECORD_COUNT_REGRESSION");
-            }
-            const confirmed = confirm(
-              `远程比本地多 ${remoteOnlyIds.length} 条记录。\n\n如果这些记录是你主动删除的，点击“确定”以本地删除结果同步到远程；否则点击“取消”。`
-            );
-            if (!confirmed) throw new Error("RECORD_COUNT_REGRESSION");
+              const backupKey = createManualSyncBackup(localData, remoteData);
+              if (!backupKey) throw new Error("MANUAL_SYNC_BACKUP_FAILED");
+              const regressionSummary = remainingRegressions
+                .map(({ dateKey, before, after }) => `${dateKey}：远程 ${before} 条 → 本地 ${after} 条`)
+                .join("\n");
+              const confirmed = confirm(
+                `部分旧记录 ID 不一致，无法逐条核对删除。已创建本地/远程完整备份。\n\n${regressionSummary}\n\n只有确认当前手机数据完整且正确时，才点击“确定”以本地完整数据覆盖远程。`
+              );
+              if (!confirmed) throw new Error("RECORD_COUNT_REGRESSION");
 
-            rememberDeletedRecordIds(remoteOnlyIds);
-            remoteOnlyIds.forEach((recordId) => deletionIdsToClear.add(recordId));
-            const deletionResult = applyRecordDeletionIds(remoteData, remoteOnlyIds);
-            remoteData = deletionResult.data;
-            deletionApplied = deletionApplied || deletionResult.removedIds.length > 0;
+              remoteData = {
+                ...localData,
+                last_updated: "1970-01-01T00:00:00.000Z"
+              };
+            } else {
+              const confirmed = confirm(
+                `远程比本地多 ${remoteOnlyIds.length} 条记录。\n\n如果这些记录是你主动删除的，点击“确定”以本地删除结果同步到远程；否则点击“取消”。`
+              );
+              if (!confirmed) throw new Error("RECORD_COUNT_REGRESSION");
+
+              rememberDeletedRecordIds(remoteOnlyIds);
+              remoteOnlyIds.forEach((recordId) => deletionIdsToClear.add(recordId));
+              const deletionResult = applyRecordDeletionIds(remoteData, remoteOnlyIds);
+              remoteData = deletionResult.data;
+              deletionApplied = deletionApplied || deletionResult.removedIds.length > 0;
+            }
           }
         }
 
