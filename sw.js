@@ -1,4 +1,4 @@
-const CACHE_NAME = "dotlog-v1.3.3-week-swipe-single-settle";
+const CACHE_NAME = "dotlog-v1.3.4-date-page-nav-today-swipe";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (event) => {

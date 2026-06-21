@@ -95,6 +95,12 @@
       cursor: pointer;
     }
 
+    .today-shortcut {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
     .icon-button svg {
       width: 20px;
       height: 20px;
@@ -2360,6 +2366,7 @@
       <div class="page-header">
         <div class="month-title" id="monthTitle"></div>
         <div class="header-actions">
+          <button class="icon-button today-shortcut is-hidden" id="todayShortcut" type="button" aria-label="回到今天" title="回到今天">今</button>
           <span class="calendar-menu-wrap" id="calendarMenuWrap">
             <button class="icon-button" id="exportIcs" type="button" title="导入、导出与列表" aria-label="打开工具菜单" aria-expanded="false">
               <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -2608,12 +2615,14 @@
     const appFooter = document.querySelector("#appFooter");
     const monthTitle = document.querySelector("#monthTitle");
     const monthMeta = document.querySelector("#monthMeta");
+    const todayShortcut = document.querySelector("#todayShortcut");
     const weekNav = document.querySelector("#weekNav");
     const weekDays = document.querySelector("#weekDays");
     const syncIndicator = document.querySelector("#syncIndicator");
     const settingsButton = document.querySelector("#settingsButton");
     const settingsView = document.querySelector("#settingsView");
     const pageHeader = document.querySelector("header");
+    const page = document.querySelector(".page");
 
     const today = startOfDay(new Date());
     let viewedDate = startOfDay(new Date());
@@ -2624,6 +2633,12 @@
     let weekSwipeAxis = null;
     let weekSwipeAnimating = false;
     let weekSwipeSuppressClick = false;
+    let pageSwipeStartX = 0;
+    let pageSwipeStartY = 0;
+    let pageSwipeCurrentX = 0;
+    let pageSwipeAxis = null;
+    let pageSwipeTracking = false;
+    let pageSwipeAnimating = false;
     let tableExpanded = false;
     let openCategoryIndexes = [];
     let openTagIndexes = [];
@@ -3546,6 +3561,105 @@
         : "none";
       weekDays.style.transform = "translate3d(0, 0, 0)";
       weekDays.style.opacity = "1";
+    }
+
+    function getPageSwipeTargets() {
+      return [pageHeader, tableTools, recordsArea, appFooter];
+    }
+
+    function setPageSwipeVisuals(transform, transition = "none", opacity = "1") {
+      getPageSwipeTargets().forEach((node) => {
+        node.style.transition = transition;
+        node.style.transform = transform;
+        node.style.opacity = opacity;
+      });
+    }
+
+    function clearPageSwipeVisuals() {
+      getPageSwipeTargets().forEach((node) => {
+        node.style.removeProperty("transition");
+        node.style.removeProperty("transform");
+        node.style.removeProperty("opacity");
+      });
+    }
+
+    function resetPageSwipePosition(animate = true) {
+      pageSwipeCurrentX = 0;
+      setPageSwipeVisuals(
+        "translate3d(0, 0, 0)",
+        animate ? "transform 0.26s cubic-bezier(0.22, 0.72, 0.2, 1), opacity 0.22s ease" : "none",
+        "1"
+      );
+      if (animate) {
+        setTimeout(() => {
+          if (pageSwipeAnimating || pageSwipeTracking) return;
+          clearPageSwipeVisuals();
+        }, 280);
+      } else {
+        clearPageSwipeVisuals();
+      }
+    }
+
+    function finishPageSwipe(dayOffset, exitDirection) {
+      if (pageSwipeAnimating) return;
+      pageSwipeAnimating = true;
+      const width = Math.max(window.innerWidth, page.clientWidth, 1);
+      const startX = Math.max(-width, Math.min(width, pageSwipeCurrentX));
+      const targetX = exitDirection * width;
+      const remainingRatio = Math.min(1, Math.abs(targetX - startX) / width);
+      const duration = Math.max(120, Math.round(220 * remainingRatio));
+
+      setPageSwipeVisuals(`translate3d(${startX}px, 0, 0)`, "none", "1");
+
+      requestAnimationFrame(() => {
+        let completed = false;
+        let fallbackTimer = null;
+        const finishTransition = () => {
+          if (completed) return;
+          completed = true;
+          if (fallbackTimer !== null) clearTimeout(fallbackTimer);
+
+          setViewedDate(offsetDate(viewedDate, dayOffset));
+          setPageSwipeVisuals(`translate3d(${-exitDirection * 34}px, 0, 0)`, "none", "0.82");
+
+          requestAnimationFrame(() => {
+            setPageSwipeVisuals(
+              "translate3d(0, 0, 0)",
+              "transform 0.18s cubic-bezier(0.22, 0.72, 0.2, 1), opacity 0.16s ease",
+              "1"
+            );
+            setTimeout(() => {
+              pageSwipeAnimating = false;
+              clearPageSwipeVisuals();
+            }, 210);
+          });
+        };
+
+        setPageSwipeVisuals(
+          `translate3d(${targetX}px, 0, 0)`,
+          `transform ${duration}ms cubic-bezier(0.22, 0.72, 0.2, 1), opacity ${Math.max(120, duration - 20)}ms ease`,
+          "0.82"
+        );
+        pageSwipeCurrentX = targetX;
+        fallbackTimer = setTimeout(finishTransition, duration + 80);
+      });
+    }
+
+    function canStartPageSwipe(target) {
+      if (settingsMode !== "main" || weekSwipeAnimating || pageSwipeAnimating) return false;
+      if (!target || !(target instanceof Element)) return false;
+      if (!bottomSheet.classList.contains("is-hidden")) return false;
+      if (!sheetOverlay.classList.contains("is-hidden")) return false;
+      if (!ctxOverlay.classList.contains("is-hidden")) return false;
+      if (!timePickerOverlay.classList.contains("is-hidden")) return false;
+      if (!calendarImportOverlay.classList.contains("is-hidden")) return false;
+      if (!exportRangeOverlay.classList.contains("is-hidden")) return false;
+      if (!calendarMenu.classList.contains("is-hidden")) return false;
+      if (target.closest(".week-nav, .header-actions, .month-title, .settings-view")) return false;
+      if (target.closest("button, input, select, textarea, label, a")) return false;
+      if (target.closest(".table-wrap")) return false;
+      if (target.closest(".ctx-menu, .bottom-sheet, .time-picker, .calendar-import-panel, .export-range-panel")) return false;
+      return true;
     }
 
     function completeWeekSwipe(dayOffset, exitDirection) {
@@ -5077,7 +5191,8 @@
       const viewingToday = isToday(viewedDate);
 
       renderWeekNav();
-      fab.classList.toggle("is-hidden", !viewingToday);
+      todayShortcut.classList.toggle("is-hidden", viewingToday);
+      fab.classList.toggle("is-hidden", settingsMode !== "main");
       monthMeta.textContent = summaryTextForRecords(records, viewedDate);
       updateSyncIndicators();
 
@@ -6084,7 +6199,7 @@
         sheetOverlay.classList.add("is-hidden");
         toggleBackfillPanel(false);
         resetBottomSheetViewport();
-        fab.classList.toggle("is-hidden", settingsMode !== "main" || !isToday(viewedDate));
+        fab.classList.toggle("is-hidden", settingsMode !== "main");
       }, 300);
     }
 
@@ -6412,10 +6527,72 @@
       }, 250);
     });
 
+    todayShortcut.addEventListener("click", () => {
+      if (isToday(viewedDate)) return;
+      setViewedDate(new Date());
+    });
+
     settingsButton.addEventListener("click", showSettingsPage);
     settingsView.addEventListener("contextmenu", (event) => {
       event.preventDefault();
     });
+
+    page.addEventListener("touchstart", (event) => {
+      if (event.touches.length === 0 || !canStartPageSwipe(event.target)) return;
+      pageSwipeTracking = true;
+      pageSwipeStartX = event.touches[0].clientX;
+      pageSwipeStartY = event.touches[0].clientY;
+      pageSwipeCurrentX = 0;
+      pageSwipeAxis = null;
+    }, { passive: true });
+
+    page.addEventListener("touchmove", (event) => {
+      if (!pageSwipeTracking || pageSwipeAnimating || event.touches.length === 0) return;
+      const deltaX = event.touches[0].clientX - pageSwipeStartX;
+      const deltaY = event.touches[0].clientY - pageSwipeStartY;
+
+      if (pageSwipeAxis === null) {
+        if (Math.max(Math.abs(deltaX), Math.abs(deltaY)) < 6) return;
+        pageSwipeAxis = Math.abs(deltaX) > Math.abs(deltaY) ? "horizontal" : "vertical";
+      }
+      if (pageSwipeAxis !== "horizontal") return;
+
+      const width = Math.max(window.innerWidth, page.clientWidth, 1);
+      const maxDrag = width * 0.34;
+      const displayX = Math.sign(deltaX) * Math.min(Math.abs(deltaX), maxDrag);
+      setPageSwipeVisuals(`translate3d(${displayX}px, 0, 0)`, "none", "1");
+      pageSwipeCurrentX = displayX;
+    }, { passive: true });
+
+    page.addEventListener("touchend", (event) => {
+      if (!pageSwipeTracking || pageSwipeAnimating) return;
+      const deltaX = event.changedTouches[0].clientX - pageSwipeStartX;
+      const deltaY = event.changedTouches[0].clientY - pageSwipeStartY;
+      if (pageSwipeAxis === null) {
+        pageSwipeAxis = Math.abs(deltaX) > Math.abs(deltaY) ? "horizontal" : "vertical";
+      }
+
+      if (pageSwipeAxis === "horizontal") {
+        const threshold = Math.max(54, window.innerWidth * 0.14);
+        if (deltaX <= -threshold) {
+          finishPageSwipe(1, -1);
+        } else if (deltaX >= threshold) {
+          finishPageSwipe(-1, 1);
+        } else {
+          resetPageSwipePosition(true);
+        }
+      }
+
+      pageSwipeTracking = false;
+      pageSwipeAxis = null;
+    }, { passive: true });
+
+    page.addEventListener("touchcancel", () => {
+      if (!pageSwipeTracking) return;
+      if (!pageSwipeAnimating) resetPageSwipePosition(true);
+      pageSwipeTracking = false;
+      pageSwipeAxis = null;
+    }, { passive: true });
 
     weekNav.addEventListener("touchstart", (event) => {
       if (weekSwipeAnimating) return;
