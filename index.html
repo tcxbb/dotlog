@@ -1885,6 +1885,11 @@
         border-radius: 16px 16px 0 0;
         padding: 18px 20px calc(28px + env(safe-area-inset-bottom));
       }
+
+      .export-range-fields {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 10px;
+      }
     }
 
     .calendar-import-head {
@@ -2858,8 +2863,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
-    const APP_VERSION = "v1.5.2";
-    const APP_BUILD_TIME = "2026-06-22 17:20";
+    const APP_VERSION = "v1.5.3";
+    const APP_BUILD_TIME = "2026-06-22 18:00";
     const MIN_READER_VERSION = "v1.4.20";
 
     const entryForm = document.querySelector("#entryForm");
@@ -8916,6 +8921,16 @@
       const selectedDateKey = formatDateKey(viewedDate);
       const selectedDate = dateFromKey(selectedDateKey);
       const targetDate = offsetDate(selectedDate, dayOffset);
+      const targetWeekStart = getWeekStart(targetDate);
+
+      if (isSameDate(targetWeekStart, currentWeekStart)) {
+        viewedDate = targetDate;
+        resetDateViewState();
+        resetWeekSwipePosition(true);
+        render();
+        return;
+      }
+
       weekSwipeAnimating = true;
       const width = Math.max(weekNav.clientWidth, 1);
       const startX = Math.max(-width, Math.min(width, weekSwipeCurrentX));
@@ -8970,11 +8985,11 @@
     }
 
     function goToPrevWeek() {
-      completeWeekSwipe(-7, 1);
+      completeWeekSwipe(-1, 1);
     }
 
     function goToNextWeek() {
-      completeWeekSwipe(7, -1);
+      completeWeekSwipe(1, -1);
     }
 
     function getClassificationDraft(index, record) {
