@@ -2650,8 +2650,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
-    const APP_VERSION = "v1.4.18";
-    const APP_BUILD_TIME = "2026-06-22 12:09";
+    const APP_VERSION = "v1.4.20";
+    const APP_BUILD_TIME = "2026-06-22 12:33";
 
     const entryForm = document.querySelector("#entryForm");
     const entryInput = document.querySelector("#entryInput");
@@ -4881,7 +4881,7 @@
           recordsDependingForSyncCompatibility: [],
           pathsAffectedIfStopWriting: [
             "旧客户端与尚未升级的多设备仍会读取和写入 category/tags",
-            "getRecordMergeConflictFields 当前比较 category/tags；停止双写会造成同 ID 形状冲突",
+            "Gist 已将 ID 一致时的旧名称差异降为 non-blocking，但仍会在审计中记录",
             "缺 ID 的旧记录仍用 category/tags 参与 legacyRecordFingerprint",
             "分类/标签删除保护仍用旧名称兜底检查历史引用"
           ],
@@ -4899,7 +4899,7 @@
             { functions: "normalizeRecord", category: "normalize 兼容", status: "合理保留" },
             { functions: "legacyRecordFingerprint", category: "旧记录 ID 兼容", status: "合理保留" },
             { functions: "auditDotlogMigrationState / previewDotlogRecordMigration / auditDotlogPostMigrationState / previewGistMergeByRecordId / auditDotlogLegacyFallbackUsage", category: "审计工具", status: "合理保留" },
-            { functions: "getRecordMergeConflictFields", category: "Gist 合并或冲突判断", status: "停止双写前必须改造" },
+            { functions: "compareRecordClassificationForMerge / getRecordMergeConflictFields", category: "Gist 合并或冲突判断", status: "已 ID 优先；旧名称差异仅审计" },
             { functions: "inspectStoredRecordReferences", category: "分类标签删除安全检查", status: "合理保留" }
           ],
           confirmedResolverBasedPaths: [
@@ -4917,7 +4917,6 @@
           localAuditClean: false,
           requiresMultiDeviceObservation: true,
           codeBlockers: [
-            "Gist 同 ID 冲突比较仍把 category/tags 视为内容字段",
             "仍需兼容旧客户端与离线 PWA 缓存版本"
           ],
           recommendation: ""
@@ -4992,7 +4991,6 @@
               category: categoryName || null,
               tags: [...legacyTagNames]
             });
-            markUnsafe(location, "当前 Gist 冲突比较仍要求保留双写旧字段");
           }
           if (categoryFallback) {
             report.fallback.categoryFallbackCount += 1;
@@ -5146,7 +5144,7 @@
         report.readiness.recommendation = "fallback 已较少，但仍需处理残余记录并继续多设备观察。";
       } else {
         report.readiness.status = "ready-for-stop-writing-later";
-        report.readiness.recommendation = "本地数据已不依赖 fallback；但 Gist 冲突比较和旧客户端兼容尚未解耦，建议至少延后两个版本并完成多设备观察后再做停止双写 dry-run。";
+        report.readiness.recommendation = "本地数据已不依赖 fallback，Gist 冲突比较也已 ID 优先；仍建议至少延后两个版本并完成旧客户端/PWA 多设备观察后再做停止双写 dry-run。";
       }
       report.readiness.canStartStopWritingPreview = report.readiness.status === "ready-for-stop-writing-preview";
 
@@ -5183,12 +5181,299 @@
       return report;
     }
 
+    function previewStopWritingLegacyFields() {
+      const legacyAudit = auditDotlogLegacyFallbackUsage();
+      const rawCategoryConfig = localStorage.getItem("category_config");
+      let categoryConfig = null;
+      let categoryConfigError = null;
+      try {
+        categoryConfig = rawCategoryConfig ? JSON.parse(rawCategoryConfig) : null;
+      } catch (error) {
+        categoryConfigError = error instanceof Error ? error.message : String(error);
+      }
+      const categories = Array.isArray(categoryConfig?.categories) ? categoryConfig.categories : [];
+      const sampleCategory = categories.find((category) => (
+        category && typeof category === "object" && normalizeReferenceId(category.id)
+      )) || null;
+      const sampleTag = Array.isArray(sampleCategory?.tags)
+        ? sampleCategory.tags.find((tag) => (
+          tag && typeof tag === "object" && normalizeReferenceId(tag.id)
+        )) || null
+        : null;
+      const previewTimestamp = new Date().toISOString();
+      const idOnlyRecord = sampleCategory ? {
+        id: "rec_preview_stop_legacy_write",
+        startTime: "10:00",
+        time: "11:00",
+        text: "停止旧字段写入 dry-run 示例",
+        note: null,
+        categoryId: sampleCategory.id,
+        tagIds: sampleTag ? [sampleTag.id] : [],
+        isBackfill: false,
+        isSplit: false,
+        createdAt: previewTimestamp,
+        updatedAt: previewTimestamp
+      } : null;
+      const legacyTwinRecord = idOnlyRecord ? {
+        ...idOnlyRecord,
+        category: typeof sampleCategory.name === "string" ? sampleCategory.name : null,
+        tags: sampleTag && typeof sampleTag.name === "string" ? [sampleTag.name] : []
+      } : null;
+      const gistComparison = idOnlyRecord && legacyTwinRecord
+        ? compareRecordsForGistMerge(idOnlyRecord, legacyTwinRecord)
+        : null;
+      const resolvedCategoryName = typeof sampleCategory?.name === "string"
+        ? sampleCategory.name
+        : "";
+      const resolvedTagNames = sampleTag && typeof sampleTag.name === "string"
+        ? [sampleTag.name]
+        : [];
+
+      const writePaths = [
+        {
+          path: "普通新增记录",
+          functions: "entryForm submit → insertNewRecords → resolveClassificationFields",
+          writesCategory: true,
+          writesTags: true,
+          idFieldsReady: true,
+          safeAfterPlannedChange: true,
+          requiredChange: "新记录构造与 resolveClassificationFields 需要支持 ID-only 输出"
+        },
+        {
+          path: "拆分记录",
+          functions: "entryForm split → insertNewRecords",
+          writesCategory: true,
+          writesTags: true,
+          idFieldsReady: true,
+          safeAfterPlannedChange: true,
+          requiredChange: "与普通新增共用统一开关；两条记录仍需写 categoryId/tagIds"
+        },
+        {
+          path: "补录记录",
+          functions: "submitBackfillPanel → insertNewRecords",
+          writesCategory: true,
+          writesTags: true,
+          idFieldsReady: true,
+          safeAfterPlannedChange: true,
+          requiredChange: "与普通新增共用统一开关"
+        },
+        {
+          path: "推荐采纳后提交",
+          functions: "acceptCurrentEntrySuggestion（草稿）→ insertNewRecords（提交）",
+          writesCategory: true,
+          writesTags: true,
+          idFieldsReady: true,
+          safeAfterPlannedChange: true,
+          requiredChange: "推荐本身无需改；最终提交改为 ID-only"
+        },
+        {
+          path: "完整编辑保存",
+          functions: "saveEditedRecord → resolveClassificationFields",
+          writesCategory: true,
+          writesTags: true,
+          idFieldsReady: true,
+          safeAfterPlannedChange: true,
+          requiredChange: "编辑保存需要只更新 categoryId/tagIds，并保留既有旧字段兼容策略"
+        },
+        {
+          path: "分类草稿保存",
+          functions: "commitClassificationDraft → resolveClassificationFields",
+          writesCategory: true,
+          writesTags: true,
+          idFieldsReady: true,
+          safeAfterPlannedChange: true,
+          requiredChange: "分类更新改为 ID-only"
+        },
+        {
+          path: "快捷修改分类",
+          functions: "updateRecordCategory → resolveClassificationFields",
+          writesCategory: true,
+          writesTags: true,
+          idFieldsReady: true,
+          safeAfterPlannedChange: true,
+          requiredChange: "只写 categoryId 并清空 tagIds"
+        },
+        {
+          path: "快捷修改标签",
+          functions: "updateRecordTags → resolveClassificationFields",
+          writesCategory: true,
+          writesTags: true,
+          idFieldsReady: true,
+          safeAfterPlannedChange: true,
+          requiredChange: "只写 tagIds；分类继续由 categoryId 关联"
+        },
+        {
+          path: "延长到现在",
+          functions: "extendRecordToNow",
+          writesCategory: false,
+          writesTags: false,
+          idFieldsReady: true,
+          safeAfterPlannedChange: true,
+          requiredChange: "函数本身无需改，但会经过 saveRecords normalize"
+        },
+        {
+          path: "统一 normalize / saveRecords",
+          functions: "normalizeRecord → normalizeRecordList → saveRecords",
+          writesCategory: true,
+          writesTags: true,
+          idFieldsReady: true,
+          safeAfterPlannedChange: false,
+          requiredChange: "normalizeRecord 当前会把缺失旧字段重新补成 category:null / tags:[]；真实停止前必须改为仅保留已有旧字段"
+        },
+        {
+          path: "同步收集与远程应用",
+          functions: "collectLocalData / applyRemoteData → normalizeRecordList",
+          writesCategory: "间接合成",
+          writesTags: "间接合成",
+          idFieldsReady: true,
+          safeAfterPlannedChange: false,
+          requiredChange: "不能改变数量保护；需先让 normalize 不再合成缺失旧字段"
+        }
+      ];
+
+      const readPaths = [
+        { category: "resolver fallback", functions: "resolveRecordCategory / resolveRecordCategoryName / resolveRecordTags / resolveRecordTagNames", keepAfterStop: true, businessResidual: false },
+        { category: "normalize 兼容", functions: "normalizeRecord / legacyRecordFingerprint", keepAfterStop: true, businessResidual: false },
+        { category: "审计工具", functions: "第 3A、6A、6C、7A、7C、8、8C 审计函数", keepAfterStop: true, businessResidual: false },
+        { category: "Gist non-blocking 差异", functions: "compareRecordClassificationForMerge / compareRecordsForGistMerge", keepAfterStop: true, businessResidual: false },
+        { category: "删除保护", functions: "inspectStoredRecordReferences", keepAfterStop: true, businessResidual: false },
+        { category: "双写保存", functions: "resolveClassificationFields 及所有记录写入入口", keepAfterStop: false, businessResidual: false },
+        { category: "业务读取残留", functions: "无；UI、统计、导出、推荐均走 resolver", keepAfterStop: false, businessResidual: false }
+      ];
+
+      const compatibilityMatrix = [
+        { path: "记录列表显示", status: idOnlyRecord ? "pass" : "not-testable", evidence: `categoryId → ${resolvedCategoryName || "未找到配置"}；tagIds → ${resolvedTagNames.join(", ") || "无标签"}` },
+        { path: "当天详情表", status: idOnlyRecord ? "pass" : "not-testable", evidence: "使用 resolveRecordCategoryName / resolveRecordTagNames" },
+        { path: "编辑面板回填", status: idOnlyRecord ? "pass" : "not-testable", evidence: "优先 resolve ID；草稿仍保留名称供 UI 使用" },
+        { path: "标签选择器", status: idOnlyRecord ? "pass" : "not-testable", evidence: "由解析后的 categoryId/tagIds 初始化" },
+        { path: "汇总表与统计", status: idOnlyRecord ? "pass" : "not-testable", evidence: "统计读取已 ID 优先" },
+        { path: "CSV 导出", status: idOnlyRecord ? "pass" : "not-testable", evidence: "分类和标签列使用 resolver" },
+        { path: "ICS 导出", status: idOnlyRecord ? "pass" : "not-testable", evidence: "标题和备注中的分类标签使用 resolver" },
+        { path: "推荐条与推荐上下文", status: idOnlyRecord ? "pass" : "not-testable", evidence: "历史记录读取已 ID 优先" },
+        {
+          path: "Gist 同 ID 合并",
+          status: gistComparison && gistComparison.conflictFields.length === 0
+            ? "pass-with-nonblocking-difference"
+            : "blocking-risk",
+          evidence: gistComparison ? {
+            blockingDifferences: gistComparison.conflictFields,
+            nonBlockingDifferences: gistComparison.nonBlockingDifferences
+          } : "无法构造示例"
+        },
+        { path: "删除分类/标签引用检查", status: idOnlyRecord ? "pass" : "not-testable", evidence: "优先检查 categoryId/tagIds，旧名称仅兜底" },
+        { path: "审计工具", status: "pass", evidence: "审计均容忍旧字段缺失，并单独统计 fallback" },
+        { path: "旧设备 / 旧 PWA", status: "unsafe-old-client", evidence: "旧版本可能直接读取 category/tags，ID-only 新记录可能显示为空或无法编辑分类标签" }
+      ];
+
+      const fallbackOrIdBlockers = Boolean(
+        legacyAudit.fallback.recordsWithAnyFallback
+        || legacyAudit.idRisks.unknownCategoryIds.length
+        || legacyAudit.idRisks.unknownTagIds.length
+        || legacyAudit.inconsistencies.possibleMappingErrorCount
+        || legacyAudit.errors.categoryConfig
+        || legacyAudit.errors.storage.length
+        || legacyAudit.errors.malformedRecords.length
+      );
+      const businessReadResiduals = readPaths.filter(({ businessResidual }) => businessResidual);
+      let readinessStatus = "technically-ready-but-delay";
+      if (fallbackOrIdBlockers || businessReadResiduals.length > 0 || !idOnlyRecord
+        || compatibilityMatrix.some(({ status }) => status === "blocking-risk")) {
+        readinessStatus = "not-ready";
+      }
+
+      const report = {
+        generatedAt: new Date().toISOString(),
+        readOnly: true,
+        simulatedOnly: true,
+        writePaths,
+        readPaths,
+        syntheticRecord: {
+          idOnlyRecord,
+          resolvedCategoryName,
+          resolvedTagNames,
+          categoryConfigError,
+          gistComparison: gistComparison ? {
+            blockingDifferences: gistComparison.conflictFields,
+            nonBlockingDifferences: gistComparison.nonBlockingDifferences,
+            classificationFallbacks: gistComparison.classificationFallbacks
+          } : null
+        },
+        compatibilityMatrix,
+        oldDeviceRisk: {
+          level: "high-until-observed",
+          cachedOldVersionMayFail: true,
+          failureModes: [
+            "直接读取 record.category 的旧版本可能显示未分类",
+            "直接读取 record.tags 的旧版本可能显示空标签",
+            "旧版本编辑后可能重新写入旧字段或产生分类标签不一致",
+            "离线 PWA 可能在数日后才升级，无法仅凭当前设备版本确认全网就绪"
+          ],
+          minimumRecommendation: "继续双写至少 2–3 个发布版本，并在所有常用设备完成强制刷新与双向同步验证",
+          versionGateRecommendation: "真实停止前建议在同步数据 envelope 增加 writerVersion / minReaderVersion 或等价兼容标记；旧客户端低于最低版本时禁止写入",
+          continueDualWrite: true
+        },
+        blockers: {
+          dataFallbackOrIdRisks: fallbackOrIdBlockers,
+          businessReadResiduals,
+          normalizeStillSynthesizesLegacyFields: true,
+          centralWriterStillReturnsLegacyFields: true,
+          oldClientVersionUnknown: true,
+          minimumCompatibleReaderNotEnforced: true
+        },
+        requiredChangesBeforeActualStop: [
+          "为 resolveClassificationFields / insertNewRecords / 编辑分类写入增加受控 ID-only 模式",
+          "调整 normalizeRecord：保留已有 category/tags，但不要为缺失字段合成 null/[]",
+          "验证 collectLocalData / applyRemoteData 在新 normalize 语义下仍保持数量保护",
+          "增加最低兼容版本或同步 envelope 版本判断",
+          "至少经过 2–3 个版本、多设备和离线 PWA 升级观察",
+          "真实停止前再次运行第 8 与第 8C 审计"
+        ],
+        readiness: {
+          status: readinessStatus,
+          technicallyIdReady: businessReadResiduals.length === 0
+            && Boolean(idOnlyRecord)
+            && !compatibilityMatrix.some(({ status }) => status === "blocking-risk"),
+          safeToStopNow: false,
+          recommendNextRoundRealStop: false,
+          recommendation: readinessStatus === "not-ready"
+            ? "仍有 fallback、ID/映射异常或无法验证的兼容路径；不要进入真实停止双写。"
+            : "当前代码读取侧和 Gist 语义已基本就绪，但 normalize、写入开关和旧客户端版本门槛尚未处理；继续双写并延后 2–3 个版本。"
+        },
+        legacyFallbackAudit: legacyAudit
+      };
+
+      window.__dotlogStopLegacyWritePreview = report;
+      console.group("[Dotlog] 停止写入 category/tags dry-run（只读）");
+      console.log("完整报告：window.__dotlogStopLegacyWritePreview", report);
+      console.table([{
+        写入路径: report.writePaths.length,
+        业务读取残留: report.blockers.businessReadResiduals.length,
+        fallback或ID风险: report.blockers.dataFallbackOrIdRisks,
+        normalize仍合成旧字段: report.blockers.normalizeStillSynthesizesLegacyFields,
+        readiness: report.readiness.status
+      }]);
+      console.groupCollapsed("写入路径清单");
+      console.table(report.writePaths);
+      console.groupEnd();
+      console.groupCollapsed("读取路径清单");
+      console.table(report.readPaths);
+      console.groupEnd();
+      console.groupCollapsed("ID-only 兼容矩阵");
+      console.table(report.compatibilityMatrix);
+      console.groupEnd();
+      console.groupCollapsed("旧设备与真实停止前要求");
+      console.log(report.oldDeviceRisk);
+      console.log(report.requiredChangesBeforeActualStop);
+      console.groupEnd();
+      console.info(report.readiness.recommendation);
+      console.info("dry-run 未写 localStorage、未调用 saveRecords、未触发 Gist 同步、未修改任何记录。双写仍保持开启。 ");
+      console.groupEnd();
+      return report;
+    }
+
     async function previewGistMergeByRecordId() {
       const dateKeyPattern = /^\d{4}-\d{2}-\d{2}$/;
       const cleanString = (value) => typeof value === "string" ? value.trim() : "";
-      const cleanArray = (value) => Array.isArray(value)
-        ? value.map(cleanString).filter(Boolean)
-        : [];
       const isRealDate = (dateKey) => {
         if (!dateKeyPattern.test(dateKey)) return false;
         const [year, month, day] = dateKey.split("-").map(Number);
@@ -5218,29 +5503,9 @@
         if (!index.has(key)) index.set(key, []);
         index.get(key).push(value);
       };
-      const comparableRecord = (record) => ({
-        start: firstString(record?.start, record?.startTime),
-        end: firstString(record?.end, record?.endTime, record?.time),
-        titleTextSummary: firstString(record?.title, record?.text, record?.summary),
-        categoryId: cleanString(record?.categoryId) || null,
-        tagIds: cleanArray(record?.tagIds).sort(),
-        category: cleanString(record?.category) || null,
-        tags: cleanArray(record?.tags).sort(),
-        updatedAt: cleanString(record?.updatedAt) || null,
-        note: cleanString(record?.note) || null,
-        description: cleanString(record?.description) || null,
-        createdAt: cleanString(record?.createdAt) || null,
-        isBackfill: Boolean(record?.isBackfill),
-        isSplit: Boolean(record?.isSplit)
-      });
-      const valuesEqual = (left, right) => JSON.stringify(left) === JSON.stringify(right);
-      const compareRecords = (localRecord, remoteRecord) => {
-        const localComparable = comparableRecord(localRecord);
-        const remoteComparable = comparableRecord(remoteRecord);
-        const conflictFields = Object.keys(localComparable)
-          .filter((field) => !valuesEqual(localComparable[field], remoteComparable[field]));
-        return { localComparable, remoteComparable, conflictFields };
-      };
+      const compareRecords = (localRecord, remoteRecord) => (
+        compareRecordsForGistMerge(localRecord, remoteRecord)
+      );
       const normalizeTitle = (record) => (firstString(
         record?.title,
         record?.text,
@@ -5381,6 +5646,7 @@
       const simulation = {
         keep: [],
         conflicts: [],
+        nonBlockingDifferences: [],
         keepLocal: [],
         candidateImportRemote: [],
         unsafeMissingId: missingIdRecords,
@@ -5411,8 +5677,14 @@
             dateKey: localOccurrence.dateKey,
             localRecordIndex: localOccurrence.recordIndex,
             remoteRecordIndex: remoteOccurrence.recordIndex,
-            conflictFields: comparison.conflictFields
+            conflictFields: comparison.conflictFields,
+            nonBlockingDifferences: comparison.nonBlockingDifferences,
+            classificationFallbacks: comparison.classificationFallbacks
           };
+          if (comparison.nonBlockingDifferences.length > 0
+            || comparison.classificationFallbacks.length > 0) {
+            simulation.nonBlockingDifferences.push(item);
+          }
           if (comparison.conflictFields.length === 0) {
             simulation.keep.push({ ...item, action: "keep" });
           } else {
@@ -6268,11 +6540,79 @@
       return JSON.stringify(normalizeValue(value));
     }
 
-    function getRecordMergeConflictFields(localRecord, remoteRecord) {
+    function getNormalizedRecordClassificationForMerge(record) {
       const cleanString = (value) => typeof value === "string" ? value.trim() : "";
-      const cleanArray = (value) => Array.isArray(value)
-        ? value.map(cleanString).filter(Boolean).sort()
-        : [];
+      const uniqueSorted = (value) => [...new Set(Array.isArray(value)
+        ? value.map(cleanString).filter(Boolean)
+        : [])].sort();
+      const rawCategoryId = cleanString(record?.categoryId);
+      const rawTagIds = uniqueSorted(record?.tagIds);
+      const hasTagIdsField = Array.isArray(record?.tagIds);
+      return {
+        categoryId: rawCategoryId.startsWith("cat_") ? rawCategoryId : null,
+        rawCategoryId: rawCategoryId || null,
+        categoryName: cleanString(record?.category) || null,
+        tagIds: hasTagIdsField && rawTagIds.every((tagId) => tagId.startsWith("tag_"))
+          ? rawTagIds
+          : null,
+        rawTagIds,
+        hasTagIdsField,
+        tagNames: uniqueSorted(record?.tags)
+      };
+    }
+
+    function compareRecordClassificationForMerge(localRecord, remoteRecord) {
+      const local = getNormalizedRecordClassificationForMerge(localRecord);
+      const remote = getNormalizedRecordClassificationForMerge(remoteRecord);
+      const blockingDifferences = [];
+      const nonBlockingDifferences = [];
+      const classificationFallbacks = [];
+      const sameSet = (left, right) => stableSerializeForGistMerge(left)
+        === stableSerializeForGistMerge(right);
+
+      if (local.categoryId && remote.categoryId) {
+        if (local.categoryId !== remote.categoryId) {
+          blockingDifferences.push("categoryId");
+        } else if (local.categoryName !== remote.categoryName) {
+          nonBlockingDifferences.push("legacyCategoryName");
+        }
+      } else {
+        classificationFallbacks.push("categoryName");
+        if (local.rawCategoryId && !local.categoryId) blockingDifferences.push("localCategoryIdUnusable");
+        if (remote.rawCategoryId && !remote.categoryId) blockingDifferences.push("remoteCategoryIdUnusable");
+        if (local.categoryName !== remote.categoryName) blockingDifferences.push("category");
+        if (local.categoryId !== remote.categoryId) {
+          nonBlockingDifferences.push("categoryIdPresenceFallback");
+        }
+      }
+
+      if (local.tagIds && remote.tagIds) {
+        if (!sameSet(local.tagIds, remote.tagIds)) {
+          blockingDifferences.push("tagIds");
+        } else if (!sameSet(local.tagNames, remote.tagNames)) {
+          nonBlockingDifferences.push("legacyTagNames");
+        }
+      } else {
+        classificationFallbacks.push("tagNames");
+        if (local.hasTagIdsField && !local.tagIds) blockingDifferences.push("localTagIdsUnusable");
+        if (remote.hasTagIdsField && !remote.tagIds) blockingDifferences.push("remoteTagIdsUnusable");
+        if (!sameSet(local.tagNames, remote.tagNames)) blockingDifferences.push("tags");
+        if (!sameSet(local.tagIds || [], remote.tagIds || [])) {
+          nonBlockingDifferences.push("tagIdsPresenceFallback");
+        }
+      }
+
+      return {
+        local,
+        remote,
+        blockingDifferences: [...new Set(blockingDifferences)],
+        nonBlockingDifferences: [...new Set(nonBlockingDifferences)],
+        classificationFallbacks: [...new Set(classificationFallbacks)]
+      };
+    }
+
+    function compareRecordsForGistMerge(localRecord, remoteRecord) {
+      const cleanString = (value) => typeof value === "string" ? value.trim() : "";
       const firstString = (...values) => {
         for (const value of values) {
           const cleaned = cleanString(value);
@@ -6294,10 +6634,6 @@
           start: firstString(record?.start, record?.startTime),
           end: firstString(record?.end, record?.endTime, record?.time),
           titleTextSummary: firstString(record?.title, record?.text, record?.summary),
-          categoryId: cleanString(record?.categoryId) || null,
-          tagIds: cleanArray(record?.tagIds),
-          category: cleanString(record?.category) || null,
-          tags: cleanArray(record?.tags),
           updatedAt: cleanString(record?.updatedAt) || null,
           note: cleanString(record?.note) || null,
           description: cleanString(record?.description) || null,
@@ -6309,12 +6645,28 @@
       };
       const localComparable = comparable(localRecord);
       const remoteComparable = comparable(remoteRecord);
-      const conflictFields = Object.keys(localComparable).filter((field) => (
+      const contentDifferences = Object.keys(localComparable).filter((field) => (
         stableSerializeForGistMerge(localComparable[field])
           !== stableSerializeForGistMerge(remoteComparable[field])
       ));
+      const classification = compareRecordClassificationForMerge(localRecord, remoteRecord);
+      const conflictFields = [...new Set([
+        ...contentDifferences,
+        ...classification.blockingDifferences
+      ])];
 
-      return conflictFields;
+      return {
+        localComparable: { ...localComparable, classification: classification.local },
+        remoteComparable: { ...remoteComparable, classification: classification.remote },
+        conflictFields,
+        blockingDifferences: conflictFields,
+        nonBlockingDifferences: classification.nonBlockingDifferences,
+        classificationFallbacks: classification.classificationFallbacks
+      };
+    }
+
+    function getRecordMergeConflictFields(localRecord, remoteRecord) {
+      return compareRecordsForGistMerge(localRecord, remoteRecord).conflictFields;
     }
 
     function getReliableRecordUpdatedAt(record) {
@@ -6397,6 +6749,7 @@
       const conflicts = [];
       const resolvedConflicts = [];
       const manuallyResolvedConflicts = [];
+      const nonBlockingDifferences = [];
       const onlyLocal = [];
       const onlyRemote = [];
       const allIds = new Set([...localById.keys(), ...remoteById.keys()]);
@@ -6405,10 +6758,20 @@
         const localOccurrence = (localById.get(recordId) || [])[0] || null;
         const remoteOccurrence = (remoteById.get(recordId) || [])[0] || null;
         if (localOccurrence && remoteOccurrence) {
-          const conflictFields = getRecordMergeConflictFields(
+          const comparison = compareRecordsForGistMerge(
             localOccurrence.record,
             remoteOccurrence.record
           );
+          const conflictFields = comparison.conflictFields;
+          if (comparison.nonBlockingDifferences.length > 0
+            || comparison.classificationFallbacks.length > 0) {
+            nonBlockingDifferences.push({
+              dateKey,
+              recordId,
+              differences: comparison.nonBlockingDifferences,
+              classificationFallbacks: comparison.classificationFallbacks
+            });
+          }
           if (conflictFields.length === 0) {
             sameIds.push(recordId);
             mergedRecords.push(localOccurrence.record);
@@ -6423,6 +6786,7 @@
               dateKey,
               recordId,
               conflictFields,
+              nonBlockingDifferences: comparison.nonBlockingDifferences,
               winner,
               localUpdatedAt: localOccurrence.record.updatedAt,
               remoteUpdatedAt: remoteOccurrence.record.updatedAt
@@ -6436,6 +6800,7 @@
                 dateKey,
                 recordId,
                 conflictFields,
+                nonBlockingDifferences: comparison.nonBlockingDifferences,
                 winner: "local",
                 resolutionTimestamp,
                 reason: "explicit manual local conflict resolution"
@@ -6446,6 +6811,7 @@
                 dateKey,
                 recordId,
                 conflictFields,
+                nonBlockingDifferences: comparison.nonBlockingDifferences,
                 localRecord: localOccurrence.record,
                 remoteRecord: remoteOccurrence.record,
                 reason: "content differs without reliable distinct updatedAt"
@@ -6544,6 +6910,7 @@
         conflicts,
         resolvedConflicts,
         manuallyResolvedConflicts,
+        nonBlockingDifferences,
         skippedUnsafe,
         onlyLocal,
         onlyRemote,
@@ -6678,6 +7045,7 @@
         conflicts: dateResults.flatMap((result) => result.conflicts),
         resolvedConflicts: dateResults.flatMap((result) => result.resolvedConflicts),
         manuallyResolvedConflicts: dateResults.flatMap((result) => result.manuallyResolvedConflicts),
+        nonBlockingDifferences: dateResults.flatMap((result) => result.nonBlockingDifferences),
         sparseRisks: dateResults.filter((result) => result.sparseRisk.hasRisk)
           .map((result) => result.sparseRisk),
         skippedUnsafe: dateResults.flatMap((result) => result.skippedUnsafe),
@@ -6991,6 +7359,7 @@
           onlyRemoteCount: result.onlyRemote.length,
           contentConflictCount: result.conflicts.length,
           resolvedConflictCount: result.resolvedConflicts.length,
+          nonBlockingDifferenceCount: result.nonBlockingDifferences.length,
           suspectedDuplicateCount: result.suspectedDuplicates.length,
           sparseRisk: result.sparseRisk.hasRisk,
           shouldApplyBy7B: result.shouldApply
@@ -7014,6 +7383,7 @@
       ));
       const contentConflicts = dateResults.flatMap((result) => result.conflicts);
       const resolvedConflicts = dateResults.flatMap((result) => result.resolvedConflicts);
+      const nonBlockingDifferences = dateResults.flatMap((result) => result.nonBlockingDifferences);
       const suspectedDuplicates = dateResults.flatMap((result) => result.suspectedDuplicates);
 
       const globalErrors = Boolean(
@@ -7067,6 +7437,7 @@
           remoteOnlyMissingFromCandidate,
           contentConflicts,
           resolvedConflicts,
+          nonBlockingDifferences,
           suspectedDuplicates,
           sparseDates: [...localSparseDates, ...remoteSparseDates]
         },
