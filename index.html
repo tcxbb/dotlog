@@ -2838,8 +2838,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
-    const APP_VERSION = "v1.5.0";
-    const APP_BUILD_TIME = "2026-06-22 14:00";
+    const APP_VERSION = "v1.5.1";
+    const APP_BUILD_TIME = "2026-06-22 16:45";
     const MIN_READER_VERSION = "v1.4.20";
 
     const entryForm = document.querySelector("#entryForm");
@@ -6643,6 +6643,31 @@
       return normalizedRecords;
     }
 
+    function normalizeGistDataForSync(data) {
+      if (!data) return { data: null, changed: false };
+      if (!data.records || typeof data.records !== "object" || Array.isArray(data.records)) {
+        throw new Error("远程 records 结构异常");
+      }
+
+      const normalizedRecords = {};
+      Object.entries(data.records).forEach(([dateKey, records]) => {
+        if (!Array.isArray(records)) {
+          throw new Error(`远程记录不是数组：${dateKey}`);
+        }
+        const normalized = sortRecords(normalizeRecordList(records, dateKey));
+        if (normalized.length !== records.length) {
+          throw new Error("NORMALIZE_RECORD_COUNT_REGRESSION");
+        }
+        normalizedRecords[dateKey] = normalized;
+      });
+
+      return {
+        data: { ...data, records: normalizedRecords },
+        changed: stableSerializeForGistMerge(normalizedRecords)
+          !== stableSerializeForGistMerge(data.records)
+      };
+    }
+
     function getRecordStorageKeys() {
       const keys = [];
       for (let index = 0; index < localStorage.length; index += 1) {
@@ -7983,6 +8008,12 @@
       try {
         const localData = collectLocalData();
         let remoteData = await fetchGistData();
+        let remoteDataWasNormalized = false;
+        if (remoteData) {
+          const normalization = normalizeGistDataForSync(remoteData);
+          remoteData = normalization.data;
+          remoteDataWasNormalized = normalization.changed;
+        }
         const deletionIdsToClear = new Set(getPendingDeletedRecordIds());
         let deletionApplied = false;
         let didPush = false;
@@ -8090,7 +8121,8 @@
           assertNoRecordCountRegression(nextData, localData, "初始合并覆盖本地");
           assertNoRecordCountRegression(nextData, remoteBaseline, "初始合并覆盖远程");
           const shouldApplyLocally = !isGistDataEquivalentForMerge(localData, nextData);
-          const shouldPushRemotely = !isGistDataEquivalentForMerge(remoteBaseline, nextData);
+          const shouldPushRemotely = remoteDataWasNormalized
+            || !isGistDataEquivalentForMerge(remoteBaseline, nextData);
           if (shouldApplyLocally) applyRemoteData(nextData);
           if (shouldPushRemotely) {
             await pushGistData(nextData);
