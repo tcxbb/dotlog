@@ -585,16 +585,74 @@
     }
 
     .entry-time-row {
-      display: flex;
+      display: grid;
+      grid-template-columns: 36px minmax(0, 1fr) 34px;
       align-items: center;
-      gap: 7px;
+      column-gap: 7px;
+      row-gap: 4px;
       margin-top: 10px;
     }
 
     .entry-time-label {
+      grid-row: 1;
       flex: 0 0 auto;
       color: var(--muted);
       font-size: 13px;
+    }
+
+    .entry-date-range,
+    .entry-clock-range {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+      gap: 7px;
+      align-items: center;
+      min-width: 0;
+    }
+
+    .entry-date-range {
+      grid-column: 2;
+      grid-row: 1;
+    }
+
+    .entry-clock-range {
+      grid-column: 2;
+      grid-row: 2;
+    }
+
+    .entry-date-wrap {
+      position: relative;
+      min-width: 0;
+    }
+
+    .entry-date-button {
+      width: 100%;
+      height: 34px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg);
+      color: var(--text);
+      padding: 6px 8px;
+      font-size: 13px;
+      text-align: center;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      cursor: pointer;
+    }
+
+    .entry-date-badge {
+      position: absolute;
+      top: -7px;
+      right: -5px;
+      z-index: 1;
+      border-radius: 999px;
+      background: #E88A3D;
+      color: #FFFFFF;
+      padding: 1px 5px;
+      font-size: 9px;
+      font-weight: 700;
+      line-height: 1.5;
+      box-shadow: 0 1px 3px rgba(26, 26, 26, 0.12);
     }
 
     .time-range-arrow {
@@ -604,9 +662,8 @@
     }
 
     .entry-time-input {
-      width: 82px;
+      width: 100%;
       min-width: 0;
-      flex: 0 0 82px;
       border: 1px solid var(--border);
       border-radius: 8px;
       background: var(--bg);
@@ -618,9 +675,11 @@
     }
 
     .entry-time-auto {
+      grid-column: 3;
+      grid-row: 2;
       display: inline-grid;
       width: 34px;
-      align-self: stretch;
+      height: 34px;
       place-items: center;
       border: 1px solid var(--border);
       border-radius: 8px;
@@ -1009,6 +1068,11 @@
       font-variant-numeric: tabular-nums;
     }
 
+    .record-duration.is-invalid {
+      color: #C85E50;
+      font-weight: 600;
+    }
+
     .record-time {
       display: flex;
       flex-direction: column;
@@ -1211,6 +1275,98 @@
       color: #FFFFFF;
     }
 
+    .date-picker {
+      position: fixed;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      z-index: 12001;
+      width: min(100%, 520px);
+      margin: 0 auto;
+      border-radius: 18px 18px 0 0;
+      background: var(--paper);
+      padding: 12px 18px calc(22px + env(safe-area-inset-bottom));
+      box-shadow: 0 -12px 40px rgba(26, 26, 26, 0.16);
+    }
+
+    .date-picker-header {
+      display: grid;
+      grid-template-columns: 40px 1fr 40px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .date-picker-nav {
+      height: 36px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text);
+      font-size: 20px;
+      cursor: pointer;
+    }
+
+    .date-picker-title {
+      font-size: 15px;
+      font-weight: 650;
+      text-align: center;
+    }
+
+    .date-picker-weekdays,
+    .date-picker-days {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 4px;
+    }
+
+    .date-picker-weekdays span {
+      padding: 5px 0;
+      color: var(--muted);
+      font-size: 11px;
+      text-align: center;
+    }
+
+    .date-picker-day {
+      aspect-ratio: 1;
+      min-height: 38px;
+      border: 0;
+      border-radius: 10px;
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+    }
+
+    .date-picker-day.is-selected {
+      background: var(--accent);
+      color: #FFFFFF;
+      font-weight: 700;
+    }
+
+    .date-picker-day:disabled {
+      color: #C9C6C1;
+      cursor: not-allowed;
+    }
+
+    .date-picker-day.is-outside {
+      visibility: hidden;
+    }
+
+    .app-toast {
+      position: fixed;
+      bottom: calc(28px + env(safe-area-inset-bottom));
+      left: 50%;
+      z-index: 14000;
+      max-width: calc(100vw - 40px);
+      transform: translateX(-50%);
+      border-radius: 999px;
+      background: rgba(26, 26, 26, 0.9);
+      color: #FFFFFF;
+      padding: 9px 15px;
+      font-size: 13px;
+      white-space: nowrap;
+      box-shadow: 0 5px 18px rgba(26, 26, 26, 0.2);
+    }
+
     @keyframes ctxMenuIn {
       from {
         opacity: 0;
@@ -1359,14 +1515,21 @@
     }
 
     .edit-time-range {
-      display: flex;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
       gap: 8px;
       align-items: center;
     }
 
+    .edit-datetime-range {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+    }
+
     .edit-time-input {
-      width: 78px;
-      min-width: 78px;
+      width: 100%;
+      min-width: 0;
       text-align: center;
       cursor: pointer;
     }
@@ -2573,6 +2736,21 @@
       </div>
     </section>
 
+    <div class="time-picker-overlay is-hidden" id="datePickerOverlay"></div>
+    <section class="date-picker is-hidden" id="datePicker" role="dialog" aria-modal="true" aria-labelledby="datePickerTitle">
+      <div class="sheet-handle"></div>
+      <div class="date-picker-header">
+        <button class="date-picker-nav" id="datePickerPrevious" type="button" aria-label="上个月">‹</button>
+        <div class="date-picker-title" id="datePickerTitle"></div>
+        <button class="date-picker-nav" id="datePickerNext" type="button" aria-label="下个月">›</button>
+      </div>
+      <div class="date-picker-weekdays" aria-hidden="true">
+        <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
+      </div>
+      <div class="date-picker-days" id="datePickerDays"></div>
+    </section>
+    <div class="app-toast is-hidden" id="appToast" role="status" aria-live="polite"></div>
+
     <button class="fab" id="fab" type="button" aria-label="新增记录">
       <svg viewBox="0 0 20 20" fill="none" stroke="#FFFFFF" stroke-width="2" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
         <line x1="10" y1="4" x2="10" y2="16"/>
@@ -2603,11 +2781,21 @@
             <button class="entry-suggestion-action" id="dismissEntrySuggestion" type="button" aria-label="忽略推荐" title="忽略推荐">×</button>
           </span>
         </div>
-        <div class="entry-time-row">
+        <div class="entry-time-row" id="entryTimeRow">
           <span class="entry-time-label">时间：</span>
-          <input class="entry-time-input" id="entryStartTime" type="text" inputmode="none" readonly aria-label="事件开始时间">
-          <span class="time-range-arrow" aria-hidden="true">→</span>
-          <input class="entry-time-input" id="entryEndTime" type="text" inputmode="none" readonly aria-label="事件结束时间">
+          <div class="entry-date-range">
+            <span class="entry-date-wrap"><button class="entry-date-button" id="entryStartDate" type="button" aria-label="事件开始日期"></button></span>
+            <span class="time-range-arrow" aria-hidden="true">→</span>
+            <span class="entry-date-wrap">
+              <button class="entry-date-button" id="entryEndDate" type="button" aria-label="事件结束日期"></button>
+              <span class="entry-date-badge is-hidden" id="entryEndDateBadge">次日</span>
+            </span>
+          </div>
+          <div class="entry-clock-range">
+            <input class="entry-time-input" id="entryStartTime" type="text" inputmode="none" readonly aria-label="事件开始时间">
+            <span class="time-range-arrow" aria-hidden="true">→</span>
+            <input class="entry-time-input" id="entryEndTime" type="text" inputmode="none" readonly aria-label="事件结束时间">
+          </div>
           <button class="entry-time-auto" id="entryStartAuto" type="button" aria-label="自动设置开始时间" title="自动设置开始时间">
             <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M4.2 7.2A6.3 6.3 0 1 1 3.8 12"/>
@@ -2650,12 +2838,15 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
-    const APP_VERSION = "v1.4.21";
-    const APP_BUILD_TIME = "2026-06-22 12:41";
+    const APP_VERSION = "v1.5.0";
+    const APP_BUILD_TIME = "2026-06-22 14:00";
     const MIN_READER_VERSION = "v1.4.20";
 
     const entryForm = document.querySelector("#entryForm");
     const entryInput = document.querySelector("#entryInput");
+    const entryStartDate = document.querySelector("#entryStartDate");
+    const entryEndDate = document.querySelector("#entryEndDate");
+    const entryEndDateBadge = document.querySelector("#entryEndDateBadge");
     const entryStartTime = document.querySelector("#entryStartTime");
     const entryStartAuto = document.querySelector("#entryStartAuto");
     const entryEndTime = document.querySelector("#entryEndTime");
@@ -2688,6 +2879,13 @@
     const timePickerMinute = document.querySelector("#timePickerMinute");
     const timePickerCancel = document.querySelector("#timePickerCancel");
     const timePickerConfirm = document.querySelector("#timePickerConfirm");
+    const datePickerOverlay = document.querySelector("#datePickerOverlay");
+    const datePicker = document.querySelector("#datePicker");
+    const datePickerTitle = document.querySelector("#datePickerTitle");
+    const datePickerPrevious = document.querySelector("#datePickerPrevious");
+    const datePickerNext = document.querySelector("#datePickerNext");
+    const datePickerDays = document.querySelector("#datePickerDays");
+    const appToast = document.querySelector("#appToast");
     const tableTools = document.querySelector("#tableTools");
     const tableToggle = document.querySelector("#tableToggle");
     const exportIcs = document.querySelector("#exportIcs");
@@ -2759,6 +2957,12 @@
     let timePickerTarget = null;
     let timePickerValue = "00:00";
     const timePickerScrollFrames = new WeakMap();
+    let entryStartDateValue = "";
+    let entryEndDateValue = "";
+    let datePickerTarget = null;
+    let datePickerMonth = startOfDay(new Date());
+    let datePickerMinimum = null;
+    let toastTimer = null;
     let editingCategoryIndex = null;
     let addingTagCategoryIndex = null;
     let editingTag = null;
@@ -2950,10 +3154,71 @@
       return `${date.getMonth() + 1}月${date.getDate()}日`;
     }
 
+    function isValidDateKey(value) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value || "")) return false;
+      const [year, month, day] = value.split("-").map(Number);
+      const date = new Date(year, month - 1, day);
+      return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
+    }
+
+    function dateFromKey(value) {
+      if (!isValidDateKey(value)) return null;
+      const [year, month, day] = value.split("-").map(Number);
+      return new Date(year, month - 1, day);
+    }
+
+    function formatDateButtonLabel(value, forceYear = false) {
+      const date = dateFromKey(value);
+      if (!date) return "选择日期";
+      return !forceYear && date.getFullYear() === today.getFullYear()
+        ? `${date.getMonth() + 1}月${date.getDate()}日`
+        : `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+    }
+
     function formatTime(date) {
       const hours = String(date.getHours()).padStart(2, "0");
       const minutes = String(date.getMinutes()).padStart(2, "0");
       return `${hours}:${minutes}`;
+    }
+
+    function normalizeTime(timeStr, recordDate) {
+      if (typeof timeStr !== "string") return null;
+      const value = timeStr.trim();
+      if (value.includes("T")) return isValidLocalDateTime(value) ? value : null;
+      return isValidDateKey(recordDate) && isValidTimeInput(value)
+        ? `${recordDate}T${value}`
+        : null;
+    }
+
+    function isValidLocalDateTime(value) {
+      const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})$/.exec(value || "");
+      return Boolean(match && isValidDateKey(match[1]) && isValidTimeInput(match[2]));
+    }
+
+    function localDateTime(dateKey, time) {
+      return isValidDateKey(dateKey) && isValidTimeInput(time) ? `${dateKey}T${time}` : null;
+    }
+
+    function datePart(value) {
+      return isValidLocalDateTime(value) ? value.slice(0, 10) : "";
+    }
+
+    function timePart(value) {
+      return isValidLocalDateTime(value) ? value.slice(11, 16) : "";
+    }
+
+    function localDateFromDateTime(value) {
+      if (!isValidLocalDateTime(value)) return null;
+      const date = dateFromKey(datePart(value));
+      const [hours, minutes] = timePart(value).split(":").map(Number);
+      return new Date(date.getFullYear(), date.getMonth(), date.getDate(), hours, minutes);
+    }
+
+    function durationBetweenDateTimes(startTime, endTime) {
+      const start = localDateFromDateTime(startTime);
+      const end = localDateFromDateTime(endTime);
+      if (!start || !end) return NaN;
+      return (end.getTime() - start.getTime()) / 60000;
     }
 
     function timeToMinutes(time) {
@@ -2990,7 +3255,8 @@
     function summaryTextForRecords(records, date) {
       if (records.length === 0) return "";
       const totalMinutes = records.reduce((total, record, index) => {
-        return total + (getRecordInterval(records, index, date)?.duration || 0);
+        const duration = getRecordInterval(records, index, date)?.duration;
+        return total + (Number.isFinite(duration) && duration >= 0 ? duration : 0);
       }, 0);
       return totalMinutes > 0
         ? `${records.length} 条 · ${formatDuration(totalMinutes)}`
@@ -3009,7 +3275,7 @@
 
     function groupRecordsByPeriod(records) {
       return records.reduce((groups, record, index) => {
-        const period = getTimePeriod(record.time);
+        const period = getTimePeriod(timePart(record.startTime) || timePart(record.endTime));
         if (!groups[period]) groups[period] = [];
         groups[period].push({ record, index });
         return groups;
@@ -3137,7 +3403,7 @@
 
     function legacyRecordFingerprint(record) {
       return JSON.stringify({
-        time: record.time || null,
+        endTime: record.endTime || record.time || null,
         startTime: record.startTime || null,
         text: record.text || null,
         category: record.category || null,
@@ -6200,6 +6466,7 @@
         isSplit: true,
         mainText: match[1].trim(),
         secondaryText: match[2].trim(),
+        duration,
         secondaryEndTime: minutesToTime(secondaryEndMinutes)
       };
     }
@@ -6319,14 +6586,20 @@
       return isSameDate(date, new Date());
     }
 
-    function normalizeRecord(record) {
+    function normalizeRecord(record, recordDate = "") {
+      const fallbackDate = isValidDateKey(record?.date)
+        ? record.date
+        : (String(recordDate).match(/\d{4}-\d{2}-\d{2}/)?.[0] || "");
+      const startTime = normalizeTime(record.startTime || "", fallbackDate);
+      const endTime = normalizeTime(record.endTime || record.time || "", fallbackDate);
+      const { time: legacyTime, ...recordWithoutLegacyTime } = record;
       return {
-        ...record,
+        ...recordWithoutLegacyTime,
         id: typeof record.id === "string" && record.id.trim()
           ? record.id.trim()
           : createLegacyRecordId(record),
-        time: record.time,
-        startTime: isValidTimeInput(record.startTime || "") ? record.startTime : null,
+        startTime,
+        endTime,
         text: record.text,
         category: record.category || null,
         categoryId: normalizeReferenceId(record.categoryId),
@@ -6347,7 +6620,7 @@
 
       const occurrenceByFingerprint = new Map();
       const normalizedRecords = records.map((record) => {
-        if (typeof record.id === "string" && record.id.trim()) return normalizeRecord(record);
+        if (typeof record.id === "string" && record.id.trim()) return normalizeRecord(record, identityScope);
 
         const fingerprint = legacyRecordFingerprint(record);
         const occurrence = occurrenceByFingerprint.get(fingerprint) || 0;
@@ -6355,7 +6628,7 @@
         return normalizeRecord({
           ...record,
           id: createLegacyRecordId(record, `${identityScope}:${occurrence}`)
-        });
+        }, identityScope);
       });
 
       if (normalizedRecords.length < records.length) {
@@ -6990,9 +7263,10 @@
         if (!mergedRecords.includes(record)) mergedRecords.push(record);
       });
 
-      const allTimesValid = mergedRecords.every((record) => (
-        record && typeof record === "object" && isValidTimeInput(record.time || "")
-      ));
+      const allTimesValid = mergedRecords.every((record) => {
+        if (!record || typeof record !== "object") return false;
+        return isValidLocalDateTime(record.endTime || "") || isValidTimeInput(record.time || "");
+      });
       const stableMergedRecords = allTimesValid ? sortRecords(mergedRecords) : [...mergedRecords];
       const countSafety = {
         mergedCount: stableMergedRecords.length,
@@ -7876,7 +8150,7 @@
       if (previousRecords.length === 0) return null;
 
       const record = previousRecords.reduce((latest, current) => {
-        return timeToMinutes(current.time) > timeToMinutes(latest.time) ? current : latest;
+        return localDateFromDateTime(current.endTime) > localDateFromDateTime(latest.endTime) ? current : latest;
       });
 
       return { date: previousDate, record };
@@ -7886,11 +8160,11 @@
       if (!isValidTimeInput(endTime)) return "";
       const endMinutes = timeToMinutes(endTime);
       const previousRecord = loadRecords(date)
-        .filter((record) => timeToMinutes(record.time) < endMinutes)
-        .sort((first, second) => timeToMinutes(second.time) - timeToMinutes(first.time))[0];
+        .filter((record) => timeToMinutes(timePart(record.endTime)) < endMinutes)
+        .sort((first, second) => timeToMinutes(timePart(second.endTime)) - timeToMinutes(timePart(first.endTime)))[0];
 
-      if (previousRecord) return previousRecord.time;
-      return getPreviousDayBoundary(date)?.record.time || endTime;
+      if (previousRecord) return timePart(previousRecord.endTime);
+      return timePart(getPreviousDayBoundary(date)?.record.endTime) || endTime;
     }
 
     function getRecordInterval(records, index, date) {
@@ -7901,35 +8175,29 @@
       const previousRecord = index < records.length - 1
         ? records[index + 1]
         : previousDayBoundary?.record || null;
-      const startTime = record.startTime || previousRecord?.time || null;
-      if (!startTime) return null;
+      const startTime = record.startTime || previousRecord?.endTime || null;
+      const endTime = record.endTime || null;
+      if (!startTime || !endTime) return null;
 
-      const isCrossDay = index === records.length - 1
-        && (record.startTime
-          ? timeToMinutes(startTime) > timeToMinutes(record.time)
-          : Boolean(previousDayBoundary));
-      const duration = isCrossDay
-        ? durationFromPreviousDay(startTime, record.time)
-        : durationBetween(startTime, record.time);
+      const duration = durationBetweenDateTimes(startTime, endTime);
+      const isCrossDay = datePart(startTime) !== datePart(endTime);
 
       let gapMinutes = 0;
       if (record.startTime && previousRecord) {
-        if (index < records.length - 1) {
-          gapMinutes = Math.max(0, timeToMinutes(startTime) - timeToMinutes(previousRecord.time));
-        } else if (isCrossDay) {
-          gapMinutes = Math.max(0, timeToMinutes(startTime) - timeToMinutes(previousRecord.time));
-        } else {
-          gapMinutes = durationFromPreviousDay(previousRecord.time, startTime);
-        }
+        gapMinutes = Math.max(0, durationBetweenDateTimes(previousRecord.endTime, startTime));
       }
 
       return {
-        startTime,
-        endTime: record.time,
+        startTime: timePart(startTime),
+        endTime: timePart(endTime),
+        startDateTime: startTime,
+        endDateTime: endTime,
         duration,
         gapMinutes,
         isCrossDay,
-        startDate: isCrossDay ? addDays(date, -1) : date
+        startDate: dateFromKey(datePart(startTime)),
+        endDate: dateFromKey(datePart(endTime)),
+        isInvalid: duration < 0
       };
     }
 
@@ -7978,7 +8246,7 @@
 
     function canExtendRecordToNow(record, index, date, now = new Date()) {
       if (!record || index !== 0 || !isToday(date)) return false;
-      const difference = now.getHours() * 60 + now.getMinutes() - timeToMinutes(record.time);
+      const difference = durationBetweenDateTimes(record.endTime, `${formatDateKey(now)}T${formatTime(now)}`);
       return difference >= 3;
     }
 
@@ -7990,7 +8258,7 @@
 
       records[index] = stampUpdatedRecord({
         ...record,
-        time: formatTime(now)
+        endTime: `${formatDateKey(now)}T${formatTime(now)}`
       }, now.toISOString());
       saveRecords(viewedDate, sortRecords(records));
       render();
@@ -8000,7 +8268,9 @@
       return records
         .map((record, order) => ({ record, order }))
         .sort((a, b) => {
-          const timeDiff = timeToMinutes(b.record.time) - timeToMinutes(a.record.time);
+          const firstTime = localDateFromDateTime(a.record.startTime || a.record.endTime)?.getTime() || 0;
+          const secondTime = localDateFromDateTime(b.record.startTime || b.record.endTime)?.getTime() || 0;
+          const timeDiff = secondTime - firstTime;
           return timeDiff || a.order - b.order;
         })
         .map((item) => item.record);
@@ -8272,7 +8542,9 @@
             : resolveRecordTagNames(record);
           const displayColor = displayCategory ? categoryColor(displayCategory) : null;
           const interval = getRecordInterval(records, index, date);
-          const durationText = interval ? formatDuration(interval.duration) : "—";
+          const durationText = interval?.isInvalid
+            ? "时间段有误，结束早于开始"
+            : interval ? formatDuration(interval.duration) : "—";
 
           const bar = document.createElement("div");
           bar.className = "record-bar";
@@ -8321,6 +8593,7 @@
 
           const duration = document.createElement("span");
           duration.className = "record-duration";
+          duration.classList.toggle("is-invalid", Boolean(interval?.isInvalid));
           duration.textContent = displayCategory ? ` · ${durationText}` : durationText;
           subRow.append(duration);
 
@@ -8338,13 +8611,13 @@
 
           const startTime = document.createElement("span");
           startTime.className = "record-time-start";
-          startTime.textContent = interval?.startTime || record.time;
-          if (interval?.isCrossDay) startTime.title = "前一天的开始时间";
+          startTime.textContent = interval?.startTime || timePart(record.endTime);
+          if (interval?.isCrossDay) startTime.title = formatDateButtonLabel(datePart(interval.startDateTime));
 
           if (interval) {
             const endTime = document.createElement("span");
             endTime.className = "record-time-end";
-            endTime.textContent = record.time;
+            endTime.textContent = timePart(record.endTime);
             time.append(endTime);
           }
 
@@ -8580,7 +8853,7 @@
       if (target.closest(".week-nav, .header-actions, .month-title, .settings-view")) return false;
       if (target.closest("button, input, select, textarea, label, a")) return false;
       if (target.closest(".table-wrap")) return false;
-      if (target.closest(".ctx-menu, .bottom-sheet, .time-picker, .calendar-import-panel, .export-range-panel")) return false;
+      if (target.closest(".ctx-menu, .bottom-sheet, .time-picker, .date-picker, .calendar-import-panel, .export-range-panel")) return false;
       return true;
     }
 
@@ -8959,8 +9232,10 @@
       const resolvedTags = resolveRecordTags(record);
       editingRecordIndex = index;
       editDraft = {
-        startTime: record.startTime || interval?.startTime || record.time || "",
-        time: record.time || "",
+        startDate: datePart(record.startTime || interval?.startDateTime) || formatDateKey(viewedDate),
+        startTime: timePart(record.startTime || interval?.startDateTime) || interval?.startTime || "",
+        endDate: datePart(record.endTime || interval?.endDateTime) || formatDateKey(viewedDate),
+        endTime: timePart(record.endTime || interval?.endDateTime) || interval?.endTime || "",
         text: record.text || "",
         note: record.note || "",
         category: resolveRecordCategoryName(record) || null,
@@ -9055,55 +9330,101 @@
       target.dispatchEvent(new Event("input", { bubbles: true }));
     }
 
-    function validateEditedRecordInterval(date, records, index, startTime, endTime) {
-      const originalInterval = getRecordInterval(records, index, date);
-      if (!originalInterval) return false;
+    function showToast(message) {
+      appToast.textContent = message;
+      appToast.classList.remove("is-hidden");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => appToast.classList.add("is-hidden"), 2200);
+    }
 
-      const dateTimeAt = (targetDate, time) => {
-        const [hours, minutes] = time.split(":").map(Number);
-        return new Date(
-          targetDate.getFullYear(),
-          targetDate.getMonth(),
-          targetDate.getDate(),
-          hours,
-          minutes,
-          0,
-          0
-        );
-      };
+    function renderDatePicker() {
+      const year = datePickerMonth.getFullYear();
+      const month = datePickerMonth.getMonth();
+      datePickerTitle.textContent = `${year}年${month + 1}月`;
+      datePickerDays.replaceChildren();
+      const firstWeekday = (new Date(year, month, 1).getDay() + 6) % 7;
+      const dayCount = daysInMonth(year, month + 1);
 
-      const startMinutes = timeToMinutes(startTime);
-      const endMinutes = timeToMinutes(endTime);
-      const isCrossDay = originalInterval.isCrossDay || startMinutes > endMinutes;
-      const startDate = isCrossDay ? addDays(date, -1) : date;
-      const startDateTime = dateTimeAt(startDate, startTime);
-      const endDateTime = dateTimeAt(date, endTime);
+      for (let index = 0; index < 42; index += 1) {
+        const day = index - firstWeekday + 1;
+        const button = document.createElement("button");
+        button.className = "date-picker-day";
+        button.type = "button";
+        if (day < 1 || day > dayCount) {
+          button.classList.add("is-outside");
+          button.disabled = true;
+        } else {
+          const value = formatDateKey(new Date(year, month, day));
+          button.textContent = String(day);
+          button.classList.toggle("is-selected", value === datePickerTarget?.value);
+          button.disabled = Boolean(datePickerMinimum && value < datePickerMinimum);
+          button.addEventListener("click", () => {
+            datePickerTarget?.onSelect(value);
+            closeDatePicker();
+          });
+        }
+        datePickerDays.append(button);
+      }
+    }
 
-      if (startDateTime > endDateTime) {
-        alert("开始时间不能晚于结束时间");
+    function openDatePicker(value, options = {}) {
+      const selected = dateFromKey(value) || startOfDay(new Date());
+      datePickerTarget = { value: formatDateKey(selected), onSelect: options.onSelect };
+      datePickerMinimum = options.minimum || null;
+      datePickerMonth = new Date(selected.getFullYear(), selected.getMonth(), 1);
+      datePickerOverlay.classList.remove("is-hidden");
+      datePicker.classList.remove("is-hidden");
+      renderDatePicker();
+    }
+
+    function closeDatePicker() {
+      datePickerOverlay.classList.add("is-hidden");
+      datePicker.classList.add("is-hidden");
+      datePickerTarget = null;
+      datePickerMinimum = null;
+    }
+
+    function updateEntryDateDisplay() {
+      const crossesYear = entryStartDateValue.slice(0, 4) !== entryEndDateValue.slice(0, 4);
+      entryStartDate.textContent = formatDateButtonLabel(entryStartDateValue, crossesYear);
+      entryEndDate.textContent = formatDateButtonLabel(entryEndDateValue, crossesYear);
+      const dayDifference = dateFromKey(entryEndDateValue) && dateFromKey(entryStartDateValue)
+        ? Math.round((dateFromKey(entryEndDateValue) - dateFromKey(entryStartDateValue)) / 86400000)
+        : 0;
+      entryEndDateBadge.textContent = dayDifference === 1 ? "次日" : `+${dayDifference}天`;
+      entryEndDateBadge.classList.toggle("is-hidden", dayDifference <= 0);
+    }
+
+    function setEntryDateRange(startDate, endDate = startDate, notifyCorrection = false) {
+      entryStartDateValue = isValidDateKey(startDate) ? startDate : formatDateKey(viewedDate);
+      entryEndDateValue = isValidDateKey(endDate) ? endDate : entryStartDateValue;
+      if (entryEndDateValue < entryStartDateValue) {
+        entryEndDateValue = entryStartDateValue;
+        if (notifyCorrection) showToast("结束日期已自动更新");
+      }
+      updateEntryDateDisplay();
+    }
+
+    function validateEditedRecordInterval(records, index, startDateTime, endDateTime) {
+      if (durationBetweenDateTimes(startDateTime, endDateTime) < 0) {
+        alert("时间段有误，结束早于开始");
         return false;
       }
 
       const previousRecord = index < records.length - 1
         ? records[index + 1]
-        : getPreviousDayBoundary(date)?.record || null;
-      if (previousRecord) {
-        const previousEndDate = index < records.length - 1 ? date : addDays(date, -1);
-        const previousEndDateTime = dateTimeAt(previousEndDate, previousRecord.time);
-        if (startDateTime < previousEndDateTime) {
-          alert(`开始时间不能早于相邻记录结束时间 ${previousRecord.time}`);
+        : null;
+      if (previousRecord?.endTime) {
+        if (localDateFromDateTime(startDateTime) < localDateFromDateTime(previousRecord.endTime)) {
+          alert(`开始时间不能早于相邻记录结束时间 ${timePart(previousRecord.endTime)}`);
           return false;
         }
       }
 
       const nextRecord = index > 0 ? records[index - 1] : null;
-      if (nextRecord?.startTime && isValidTimeInput(nextRecord.startTime)) {
-        const nextInterval = getRecordInterval(records, index - 1, date);
-        const nextStartDateTime = nextInterval
-          ? dateTimeAt(nextInterval.startDate, nextInterval.startTime)
-          : null;
-        if (nextStartDateTime && endDateTime > nextStartDateTime) {
-          alert(`结束时间不能晚于相邻记录开始时间 ${nextInterval.startTime}`);
+      if (nextRecord?.startTime) {
+        if (localDateFromDateTime(endDateTime) > localDateFromDateTime(nextRecord.startTime)) {
+          alert(`结束时间不能晚于相邻记录开始时间 ${timePart(nextRecord.startTime)}`);
           return false;
         }
       }
@@ -9112,24 +9433,26 @@
     }
 
     function saveEditedRecord(index) {
-      if (!editDraft || !isValidTimeInput(editDraft.startTime) || !isValidTimeInput(editDraft.time) || !editDraft.text.trim()) return;
+      if (!editDraft || !isValidTimeInput(editDraft.startTime) || !isValidTimeInput(editDraft.endTime) || !editDraft.text.trim()) return;
 
       const records = loadRecords(viewedDate);
       const original = records[index];
       if (!original) return;
-      if (!validateEditedRecordInterval(viewedDate, records, index, editDraft.startTime, editDraft.time)) return;
+      const nextStartTime = localDateTime(editDraft.startDate, editDraft.startTime);
+      const nextEndTime = localDateTime(editDraft.endDate, editDraft.endTime);
+      if (!validateEditedRecordInterval(records, index, nextStartTime, nextEndTime)) return;
 
-      const timeChanged = editDraft.time !== original.time;
-      const hasSameTime = records.some((record, recordIndex) => recordIndex !== index && record.time === editDraft.time);
+      const timeChanged = nextEndTime !== original.endTime;
+      const hasSameTime = records.some((record, recordIndex) => recordIndex !== index && record.endTime === nextEndTime);
       if (timeChanged && hasSameTime && !confirm("该时间已有另一条记录，是否继续保存？")) {
         return;
       }
 
-      records[index] = stampUpdatedRecord({
+      const updatedRecord = stampUpdatedRecord({
         ...original,
         id: original.id,
-        startTime: editDraft.startTime,
-        time: editDraft.time,
+        startTime: nextStartTime,
+        endTime: nextEndTime,
         text: editDraft.text.trim(),
         note: editDraft.note.trim() || null,
         isBackfill: original.isBackfill || false,
@@ -9142,7 +9465,20 @@
         }, original)
       });
 
-      saveRecords(viewedDate, sortRecords(records));
+      if (editDraft.startDate === formatDateKey(viewedDate)) {
+        records[index] = updatedRecord;
+        saveRecords(viewedDate, sortRecords(records));
+      } else {
+        const inserted = insertNewRecords(dateFromKey(editDraft.startDate), [updatedRecord]);
+        if (!inserted) return;
+        records.splice(index, 1);
+        const removed = saveRecords(viewedDate, records, {
+          allowRecordCountDecrease: true,
+          expectedDecrease: 1,
+          reason: "move-record-start-date"
+        });
+        if (!removed) return;
+      }
       editingRecordIndex = null;
       editDraft = null;
       editCategoryExpanded = false;
@@ -9186,7 +9522,7 @@
       timeInput.type = "text";
       timeInput.inputMode = "none";
       timeInput.readOnly = true;
-      timeInput.value = editDraft.time;
+      timeInput.value = editDraft.endTime;
       timeInput.setAttribute("aria-label", "记录结束时间");
 
       const textLine = document.createElement("label");
@@ -9325,12 +9661,18 @@
 
       function validateEditPanel() {
         const validStartTime = isValidTimeInput(editDraft.startTime);
-        const validTime = isValidTimeInput(editDraft.time);
+        const validTime = isValidTimeInput(editDraft.endTime);
+        const validInterval = validStartTime && validTime
+          && durationBetweenDateTimes(
+            localDateTime(editDraft.startDate, editDraft.startTime),
+            localDateTime(editDraft.endDate, editDraft.endTime)
+          ) >= 0;
         const validText = Boolean(editDraft.text.trim());
         startTimeInput.classList.toggle("is-invalid", !validStartTime);
-        timeInput.classList.toggle("is-invalid", !validTime);
-        error.classList.toggle("is-hidden", validStartTime && validTime);
-        saveButton.disabled = !validStartTime || !validTime || !validText;
+        timeInput.classList.toggle("is-invalid", !validTime || !validInterval);
+        error.textContent = validInterval ? "请选择正确的开始和结束时间" : "时间段有误，结束早于开始";
+        error.classList.toggle("is-hidden", validStartTime && validTime && validInterval);
+        saveButton.disabled = !validStartTime || !validTime || !validInterval || !validText;
       }
 
       startTimeInput.addEventListener("input", () => {
@@ -9339,7 +9681,7 @@
       });
       startTimeInput.addEventListener("click", () => openTimePicker(startTimeInput, "选择开始时间"));
       timeInput.addEventListener("input", () => {
-        editDraft.time = timeInput.value.trim();
+        editDraft.endTime = timeInput.value.trim();
         validateEditPanel();
       });
       timeInput.addEventListener("click", () => openTimePicker(timeInput, "选择结束时间"));
@@ -9364,7 +9706,47 @@
       timeArrow.setAttribute("aria-hidden", "true");
       timeArrow.textContent = "→";
       timeRange.append(startTimeInput, timeArrow, timeInput);
-      timeFields.append(timeLabel, timeRange);
+      const dateRange = document.createElement("div");
+      dateRange.className = "edit-time-range";
+      const startDateButton = document.createElement("button");
+      startDateButton.className = "entry-date-button";
+      startDateButton.type = "button";
+      startDateButton.textContent = formatDateButtonLabel(editDraft.startDate);
+      const endDateWrap = document.createElement("span");
+      endDateWrap.className = "entry-date-wrap";
+      const endDateButton = document.createElement("button");
+      endDateButton.className = "entry-date-button";
+      endDateButton.type = "button";
+      endDateButton.textContent = formatDateButtonLabel(editDraft.endDate);
+      const editBadge = document.createElement("span");
+      editBadge.className = "entry-date-badge";
+      const editDayDifference = Math.round((dateFromKey(editDraft.endDate) - dateFromKey(editDraft.startDate)) / 86400000);
+      editBadge.textContent = editDayDifference === 1 ? "次日" : `+${editDayDifference}天`;
+      editBadge.classList.toggle("is-hidden", editDayDifference <= 0);
+      endDateWrap.append(endDateButton, editBadge);
+      const dateArrow = timeArrow.cloneNode(true);
+      dateRange.append(startDateButton, dateArrow, endDateWrap);
+      startDateButton.addEventListener("click", () => openDatePicker(editDraft.startDate, {
+        onSelect: (value) => {
+          editDraft.startDate = value;
+          if (editDraft.endDate < value) {
+            editDraft.endDate = value;
+            showToast("结束日期已自动更新");
+          }
+          render();
+        }
+      }));
+      endDateButton.addEventListener("click", () => openDatePicker(editDraft.endDate, {
+        minimum: editDraft.startDate,
+        onSelect: (value) => {
+          editDraft.endDate = value;
+          render();
+        }
+      }));
+      const dateTimeRange = document.createElement("div");
+      dateTimeRange.className = "edit-datetime-range";
+      dateTimeRange.append(dateRange, timeRange);
+      timeFields.append(timeLabel, dateTimeRange);
       actions.append(saveButton, cancelButton);
       panel.append(actions, timeFields, textLine, noteLine, error, categorySection, tagSection);
       validateEditPanel();
@@ -10349,7 +10731,7 @@
       const rows = chronologicalRecords.map((record, index) => {
         const descendingIndex = records.length - 1 - index;
         const interval = getRecordInterval(records, descendingIndex, date);
-        if (!interval) return null;
+        if (!interval || interval.isInvalid) return null;
         totalMinutes += interval.duration;
         const categoryName = resolveRecordCategoryName(record);
         const tagNames = resolveRecordTagNames(record);
@@ -10357,7 +10739,7 @@
         return {
           index: index + 1,
           start: interval.startTime,
-          end: record.time,
+          end: interval.endTime,
           duration: interval.duration,
           category: categoryName,
           tags: tagNames,
@@ -10464,7 +10846,7 @@
         const event = [
           "BEGIN:VEVENT",
           `DTSTART;TZID=Asia/Shanghai:${formatIcsDate(interval.startDate, interval.startTime)}`,
-          `DTEND;TZID=Asia/Shanghai:${formatIcsDate(date, record.time)}`,
+          `DTEND;TZID=Asia/Shanghai:${formatIcsDate(interval.endDate, interval.endTime)}`,
           `SUMMARY:${escapeIcsText(summaryForRecord(record))}`,
           record.note ? `DESCRIPTION:${escapeIcsText(record.note)}` : null,
           `UID:${createEventUid()}@时间打点器`,
@@ -10781,7 +11163,7 @@
         ...resolveClassificationFields(record)
       }, timestamp, APP_VERSION));
       const records = sortRecords([...resolvedNewRecords, ...loadRecords(date)]);
-      saveRecords(date, records);
+      if (!saveRecords(date, records)) return null;
       openCategoryIndexes = [];
       openTagIndexes = [];
       classificationDrafts = {};
@@ -10979,17 +11361,23 @@
     }
 
     function activeEntryTiming() {
-      if (!backfillPanel.classList.contains("is-hidden")) {
-        return {
-          date: dateFromSelectors(backfillYear, backfillMonth, backfillDay),
-          endTime: isValidTimeInput(entryEndTime.value) ? entryEndTime.value : formatTime(new Date())
-        };
-      }
-
       return {
-        date: today,
+        date: dateFromKey(entryStartDateValue) || viewedDate,
+        startDate: entryStartDateValue,
+        endDate: entryEndDateValue,
         endTime: isValidTimeInput(entryEndTime.value) ? entryEndTime.value : formatTime(new Date())
       };
+    }
+
+    function currentEntryDefaultDate() {
+      return !backfillPanel.classList.contains("is-hidden")
+        ? dateFromSelectors(backfillYear, backfillMonth, backfillDay)
+        : viewedDate;
+    }
+
+    function resetEntryDates() {
+      const key = formatDateKey(currentEntryDefaultDate());
+      setEntryDateRange(key, key);
     }
 
     function resetEntryEndTime() {
@@ -11009,30 +11397,16 @@
       return getDefaultStartTime(date, endTime);
     }
 
-    function validateEntryInterval(date, startTime, endTime) {
-      if (!isValidTimeInput(startTime) || !isValidTimeInput(endTime)) {
+    function validateEntryInterval(startDate, startTime, endDate, endTime) {
+      if (!isValidTimeInput(startTime) || !isValidTimeInput(endTime)
+        || !isValidDateKey(startDate) || !isValidDateKey(endDate)) {
         alert("请选择正确的开始时间");
         return false;
       }
 
-      const startMinutes = timeToMinutes(startTime);
-      const endMinutes = timeToMinutes(endTime);
-      const previousRecord = loadRecords(date)
-        .filter((record) => timeToMinutes(record.time) < endMinutes)
-        .sort((first, second) => timeToMinutes(second.time) - timeToMinutes(first.time))[0];
-
-      if (previousRecord) {
-        const previousEndMinutes = timeToMinutes(previousRecord.time);
-        if (startMinutes < previousEndMinutes || startMinutes > endMinutes) {
-          alert(`开始时间应在 ${previousRecord.time}–${endTime} 之间`);
-          return false;
-        }
-      } else if (startMinutes > endMinutes) {
-        const previousDayBoundary = getPreviousDayBoundary(date);
-        if (previousDayBoundary && startMinutes < timeToMinutes(previousDayBoundary.record.time)) {
-          alert(`开始时间不能早于前一天最后记录 ${previousDayBoundary.record.time}`);
-          return false;
-        }
+      if (durationBetweenDateTimes(localDateTime(startDate, startTime), localDateTime(endDate, endTime)) < 0) {
+        alert("时间段有误，结束早于开始");
+        return false;
       }
 
       return true;
@@ -11065,6 +11439,7 @@
       fab.classList.add("is-hidden");
       renderEntryClassification();
       renderEntrySuggestion();
+      resetEntryDates();
       resetEntryEndTime();
       refreshEntryStartTime(true);
       requestAnimationFrame(() => {
@@ -11078,6 +11453,8 @@
 
     function closeBottomSheet() {
       clearTimeout(bottomSheetCloseTimer);
+      closeDatePicker();
+      closeTimePicker();
       bottomSheet.classList.remove("is-open");
       if (bottomSheet.classList.contains("is-hidden")) {
         toggleBackfillPanel(false);
@@ -11097,12 +11474,14 @@
     function toggleBackfillPanel(open) {
       backfillPanel.classList.toggle("is-hidden", !open);
       if (open) {
-        setDateSelectors(backfillYear, backfillMonth, backfillDay, today);
+        setDateSelectors(backfillYear, backfillMonth, backfillDay, viewedDate);
+        resetEntryDates();
         resetEntryEndTime();
         entryStartTimeTouched = false;
         refreshEntryStartTime(true);
         backfillError.classList.add("is-hidden");
       } else if (!bottomSheet.classList.contains("is-hidden")) {
+        resetEntryDates();
         entryStartTimeTouched = false;
         refreshEntryStartTime(true);
       }
@@ -11127,7 +11506,7 @@
     function submitBackfillPanel() {
       const time = entryEndTime.value;
       const rawText = entryInput.value.trim();
-      const targetDate = dateFromSelectors(backfillYear, backfillMonth, backfillDay);
+      const targetDate = dateFromKey(entryStartDateValue);
 
       if (!validateBackfillPanel()) {
         entryEndTime.focus();
@@ -11143,10 +11522,10 @@
       const parsedEntry = parseEntryText(rawText);
       const classification = entryClassificationFields();
       const startTime = resolveEntryStartTime(targetDate, time);
-      if (!validateEntryInterval(targetDate, startTime, time)) return;
+      if (!validateEntryInterval(entryStartDateValue, startTime, entryEndDateValue, time)) return;
       const newRecord = {
-        startTime,
-        time,
+        startTime: localDateTime(entryStartDateValue, startTime),
+        endTime: localDateTime(entryEndDateValue, time),
         text: parsedEntry.text,
         category: classification.category,
         note: parsedEntry.note,
@@ -11199,17 +11578,24 @@
 
       const newRecords = [];
       const classification = entryClassificationFields();
-      const firstEndTime = split.isSplit ? split.secondaryEndTime : backfill.time;
-      const startTime = resolveEntryStartTime(today, firstEndTime);
-      if (!validateEntryInterval(today, startTime, firstEndTime)) return;
+      const targetDate = dateFromKey(entryStartDateValue);
+      let firstEndTime = backfill.time;
+      let firstEndDate = entryEndDateValue;
+      if (split.isSplit) {
+        const splitBoundary = new Date(localDateFromDateTime(localDateTime(entryEndDateValue, backfill.time)).getTime() - split.duration * 60000);
+        firstEndTime = formatTime(splitBoundary);
+        firstEndDate = formatDateKey(splitBoundary);
+      }
+      const startTime = resolveEntryStartTime(targetDate, firstEndTime);
+      if (!validateEntryInterval(entryStartDateValue, startTime, firstEndDate, firstEndTime)) return;
 
       if (split.isSplit) {
         const mainEntry = parseEntryText(split.mainText);
         const secondaryEntry = parseEntryText(split.secondaryText);
         newRecords.push(
           {
-            startTime,
-            time: split.secondaryEndTime,
+            startTime: localDateTime(entryStartDateValue, startTime),
+            endTime: localDateTime(firstEndDate, firstEndTime),
             text: mainEntry.text,
             category: classification.category,
             note: mainEntry.note,
@@ -11218,8 +11604,8 @@
             isSplit: true
           },
           {
-            startTime: split.secondaryEndTime,
-            time: backfill.time,
+            startTime: localDateTime(firstEndDate, firstEndTime),
+            endTime: localDateTime(entryEndDateValue, backfill.time),
             text: secondaryEntry.text,
             category: classification.category,
             note: secondaryEntry.note,
@@ -11231,8 +11617,8 @@
       } else {
         const parsedEntry = parseEntryText(backfill.text);
         newRecords.push({
-          startTime,
-          time: backfill.time,
+          startTime: localDateTime(entryStartDateValue, startTime),
+          endTime: localDateTime(entryEndDateValue, backfill.time),
           text: parsedEntry.text,
           category: classification.category,
           note: parsedEntry.note,
@@ -11242,8 +11628,8 @@
         });
       }
 
-      insertNewRecords(today, newRecords);
-      viewedDate = startOfDay(new Date());
+      insertNewRecords(targetDate, newRecords);
+      viewedDate = targetDate;
       currentWeekStart = getWeekStart(viewedDate);
       entryInput.value = "";
       updateSplitHint();
@@ -11354,6 +11740,21 @@
 
     entryStartTime.addEventListener("click", () => openTimePicker(entryStartTime, "选择开始时间"));
 
+    entryStartDate.addEventListener("click", () => openDatePicker(entryStartDateValue, {
+      onSelect: (value) => {
+        setEntryDateRange(value, entryEndDateValue, true);
+        entryStartTimeTouched = false;
+        refreshEntryStartTime(true);
+      }
+    }));
+
+    entryEndDate.addEventListener("click", () => openDatePicker(entryEndDateValue, {
+      minimum: entryStartDateValue,
+      onSelect: (value) => {
+        setEntryDateRange(entryStartDateValue, value);
+      }
+    }));
+
     entryEndTime.addEventListener("input", () => refreshEntryStartTime());
     entryEndTime.addEventListener("click", () => openTimePicker(entryEndTime, "选择结束时间"));
 
@@ -11362,8 +11763,19 @@
     timePickerOverlay.addEventListener("click", closeTimePicker);
     timePickerCancel.addEventListener("click", closeTimePicker);
     timePickerConfirm.addEventListener("click", confirmTimePicker);
+    datePickerOverlay.addEventListener("click", closeDatePicker);
+    datePickerPrevious.addEventListener("click", () => {
+      datePickerMonth = new Date(datePickerMonth.getFullYear(), datePickerMonth.getMonth() - 1, 1);
+      renderDatePicker();
+    });
+    datePickerNext.addEventListener("click", () => {
+      datePickerMonth = new Date(datePickerMonth.getFullYear(), datePickerMonth.getMonth() + 1, 1);
+      renderDatePicker();
+    });
 
     entryStartAuto.addEventListener("click", () => {
+      resetEntryDates();
+      resetEntryEndTime();
       entryStartTimeTouched = false;
       refreshEntryStartTime(true);
     });
@@ -11400,13 +11812,18 @@
 
     backfillYear.addEventListener("change", () => {
       refreshDaySelector(backfillYear, backfillMonth, backfillDay);
+      resetEntryDates();
       refreshEntryStartTime();
     });
     backfillMonth.addEventListener("change", () => {
       refreshDaySelector(backfillYear, backfillMonth, backfillDay);
+      resetEntryDates();
       refreshEntryStartTime();
     });
-    backfillDay.addEventListener("change", () => refreshEntryStartTime());
+    backfillDay.addEventListener("change", () => {
+      resetEntryDates();
+      refreshEntryStartTime();
+    });
 
     confirmBackfill.addEventListener("click", submitBackfillPanel);
 
@@ -11584,7 +12001,7 @@
 
     document.addEventListener("pointerdown", (event) => {
       if (editingRecordIndex === null) return;
-      if (event.target.closest(".edit-panel, .time-picker, .time-picker-overlay")) return;
+      if (event.target.closest(".edit-panel, .time-picker, .date-picker, .time-picker-overlay")) return;
       cancelEditingRecord();
     });
 
@@ -11609,6 +12026,7 @@
         closeCalendarImportPanel();
         closeExportRangePanel();
         closeTimePicker();
+        closeDatePicker();
       }
     });
 
