@@ -2650,8 +2650,9 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
-    const APP_VERSION = "v1.4.20";
-    const APP_BUILD_TIME = "2026-06-22 12:33";
+    const APP_VERSION = "v1.4.21";
+    const APP_BUILD_TIME = "2026-06-22 12:41";
+    const MIN_READER_VERSION = "v1.4.20";
 
     const entryForm = document.querySelector("#entryForm");
     const entryInput = document.querySelector("#entryInput");
@@ -3083,15 +3084,46 @@
       return Number.isFinite(Date.parse(value)) ? value.trim() : null;
     }
 
-    function stampNewRecord(record, timestamp = getNowIso()) {
+    function normalizeDotlogVersion(value) {
+      const version = typeof value === "string" ? value.trim() : "";
+      return /^v\d+\.\d+\.\d+$/.test(version) ? version : null;
+    }
+
+    function compareDotlogVersions(leftValue, rightValue) {
+      const left = normalizeDotlogVersion(leftValue);
+      const right = normalizeDotlogVersion(rightValue);
+      if (!left || !right) return null;
+      const leftParts = left.slice(1).split(".").map(Number);
+      const rightParts = right.slice(1).split(".").map(Number);
+      for (let index = 0; index < 3; index += 1) {
+        if (leftParts[index] !== rightParts[index]) return leftParts[index] - rightParts[index];
+      }
+      return 0;
+    }
+
+    function stampNewRecord(record, timestamp = getNowIso(), writerVersion = null) {
       const createdAt = getReliableIsoTimestamp(record?.createdAt) || timestamp;
       const updatedAt = getReliableIsoTimestamp(record?.updatedAt) || timestamp;
-      return { ...record, createdAt, updatedAt };
+      const normalizedWriterVersion = normalizeDotlogVersion(record?.writerVersion)
+        || normalizeDotlogVersion(writerVersion);
+      if (!normalizedWriterVersion) return { ...record, createdAt, updatedAt };
+      return {
+        ...record,
+        createdAt,
+        updatedAt,
+        writerVersion: normalizedWriterVersion,
+        updatedByVersion: normalizeDotlogVersion(record?.updatedByVersion) || normalizedWriterVersion
+      };
     }
 
     function stampUpdatedRecord(record, timestamp = getNowIso()) {
       const createdAt = getReliableIsoTimestamp(record?.createdAt) || timestamp;
-      return { ...record, createdAt, updatedAt: timestamp };
+      return {
+        ...record,
+        createdAt,
+        updatedAt: timestamp,
+        updatedByVersion: APP_VERSION
+      };
     }
 
     function stableStringHash(value, seed = 2166136261) {
@@ -4842,6 +4874,24 @@
           categoryIdTagIdsCompleteRecords: 0,
           completelyWithoutCategoryOrTags: 0
         },
+        versionCompatibility: {
+          appVersion: APP_VERSION,
+          minReaderVersion: MIN_READER_VERSION,
+          minReaderVersionEnforced: false,
+          missingWriterVersionCount: 0,
+          currentWriterVersionCount: 0,
+          olderWriterVersionCount: 0,
+          newerWriterVersionCount: 0,
+          invalidWriterVersionCount: 0,
+          writtenBeforeMinReaderVersionCount: 0,
+          missingUpdatedByVersionCount: 0,
+          currentUpdatedByVersionCount: 0,
+          byWriterVersion: [],
+          missingWriterVersionRecords: [],
+          invalidWriterVersionRecords: [],
+          writtenBeforeMinReaderVersionRecords: [],
+          recommendation: ""
+        },
         fallback: {
           categoryFallbackCount: 0,
           tagFallbackCount: 0,
@@ -4934,6 +4984,7 @@
       )));
       const categoryFallbackNames = new Map();
       const tagFallbackNames = new Map();
+      const writerVersionCounts = new Map();
       const unsafeRecords = new Map();
       const legacyPresentRecords = new Map();
       const categoryHitKeys = new Set();
@@ -4950,6 +5001,39 @@
           if (!record || typeof record !== "object" || Array.isArray(record)) {
             report.errors.malformedRecords.push({ ...location, error: "记录不是对象" });
             return;
+          }
+
+          const rawWriterVersion = cleanString(record.writerVersion);
+          const writerVersion = normalizeDotlogVersion(rawWriterVersion);
+          const updatedByVersion = normalizeDotlogVersion(record.updatedByVersion);
+          if (!rawWriterVersion) {
+            report.versionCompatibility.missingWriterVersionCount += 1;
+            report.versionCompatibility.missingWriterVersionRecords.push(location);
+          } else if (!writerVersion) {
+            report.versionCompatibility.invalidWriterVersionCount += 1;
+            report.versionCompatibility.invalidWriterVersionRecords.push({
+              ...location,
+              writerVersion: rawWriterVersion
+            });
+          } else {
+            increment(writerVersionCounts, writerVersion);
+            const currentComparison = compareDotlogVersions(writerVersion, APP_VERSION);
+            if (currentComparison === 0) report.versionCompatibility.currentWriterVersionCount += 1;
+            else if (currentComparison < 0) report.versionCompatibility.olderWriterVersionCount += 1;
+            else report.versionCompatibility.newerWriterVersionCount += 1;
+            const readerComparison = compareDotlogVersions(writerVersion, MIN_READER_VERSION);
+            if (readerComparison < 0) {
+              report.versionCompatibility.writtenBeforeMinReaderVersionCount += 1;
+              report.versionCompatibility.writtenBeforeMinReaderVersionRecords.push({
+                ...location,
+                writerVersion
+              });
+            }
+          }
+          if (!updatedByVersion) {
+            report.versionCompatibility.missingUpdatedByVersionCount += 1;
+          } else if (updatedByVersion === APP_VERSION) {
+            report.versionCompatibility.currentUpdatedByVersionCount += 1;
           }
 
           const categoryName = cleanString(record.category);
@@ -5105,6 +5189,12 @@
       report.fallback.byDate = [...dateFallbackCounts.values()];
       report.fallback.byCategoryName = mapToCounts(categoryFallbackNames, "categoryName");
       report.fallback.byTagName = mapToCounts(tagFallbackNames, "tagName");
+      report.versionCompatibility.byWriterVersion = mapToCounts(writerVersionCounts, "writerVersion");
+      report.versionCompatibility.recommendation = report.versionCompatibility.missingWriterVersionCount > 0
+        || report.versionCompatibility.writtenBeforeMinReaderVersionCount > 0
+        || report.versionCompatibility.invalidWriterVersionCount > 0
+        ? "仍有无法确认写入端版本或低于最低阅读版本的记录；继续双写并观察至少 2–3 个发布版本。"
+        : "现有记录版本证据未发现低版本写入，但最低阅读版本尚未强制执行；仍不应立即停止双写。";
 
       const allMismatches = [
         ...report.inconsistencies.categoryNameMismatches,
@@ -5174,6 +5264,10 @@
       console.groupCollapsed("代码层旧字段读取与删除风险");
       console.log(report.codeReads);
       console.log(report.legacyDependencyRisks);
+      console.groupEnd();
+      console.groupCollapsed("写入端 / 最低阅读版本兼容");
+      console.log(report.versionCompatibility);
+      console.table(report.versionCompatibility.byWriterVersion);
       console.groupEnd();
       console.info(report.readiness.recommendation);
       console.info("审计为只读操作：未写 localStorage、未调用 saveRecords、未触发 Gist 同步。未修改 createdAt / updatedAt。");
@@ -5412,13 +5506,17 @@
           versionGateRecommendation: "真实停止前建议在同步数据 envelope 增加 writerVersion / minReaderVersion 或等价兼容标记；旧客户端低于最低版本时禁止写入",
           continueDualWrite: true
         },
+        versionCompatibility: legacyAudit.versionCompatibility,
         blockers: {
           dataFallbackOrIdRisks: fallbackOrIdBlockers,
           businessReadResiduals,
           normalizeStillSynthesizesLegacyFields: true,
           centralWriterStillReturnsLegacyFields: true,
           oldClientVersionUnknown: true,
-          minimumCompatibleReaderNotEnforced: true
+          minimumCompatibleReaderNotEnforced: true,
+          recordsWithoutWriterVersion: legacyAudit.versionCompatibility.missingWriterVersionCount,
+          recordsWrittenBeforeMinReaderVersion:
+            legacyAudit.versionCompatibility.writtenBeforeMinReaderVersionCount
         },
         requiredChangesBeforeActualStop: [
           "为 resolveClassificationFields / insertNewRecords / 编辑分类写入增加受控 ID-only 模式",
@@ -6624,7 +6722,8 @@
         const knownFields = new Set([
           "id", "start", "startTime", "end", "endTime", "time",
           "title", "text", "summary", "categoryId", "tagIds", "category", "tags",
-          "updatedAt", "note", "description", "createdAt", "isBackfill", "isSplit"
+          "updatedAt", "note", "description", "createdAt", "isBackfill", "isSplit",
+          "writerVersion", "updatedByVersion"
         ]);
         const additionalFields = Object.keys(record || {}).reduce((result, key) => {
           if (!knownFields.has(key) && record[key] !== undefined) result[key] = record[key];
@@ -6650,6 +6749,13 @@
           !== stableSerializeForGistMerge(remoteComparable[field])
       ));
       const classification = compareRecordClassificationForMerge(localRecord, remoteRecord);
+      const versionMetadataDifferences = [];
+      if (cleanString(localRecord?.writerVersion) !== cleanString(remoteRecord?.writerVersion)) {
+        versionMetadataDifferences.push("writerVersionMetadata");
+      }
+      if (cleanString(localRecord?.updatedByVersion) !== cleanString(remoteRecord?.updatedByVersion)) {
+        versionMetadataDifferences.push("updatedByVersionMetadata");
+      }
       const conflictFields = [...new Set([
         ...contentDifferences,
         ...classification.blockingDifferences
@@ -6660,7 +6766,10 @@
         remoteComparable: { ...remoteComparable, classification: classification.remote },
         conflictFields,
         blockingDifferences: conflictFields,
-        nonBlockingDifferences: classification.nonBlockingDifferences,
+        nonBlockingDifferences: [...new Set([
+          ...classification.nonBlockingDifferences,
+          ...versionMetadataDifferences
+        ])],
         classificationFallbacks: classification.classificationFallbacks
       };
     }
@@ -10670,7 +10779,7 @@
         ...record,
         id: normalizeReferenceId(record.id) || createStableId("rec"),
         ...resolveClassificationFields(record)
-      }, timestamp));
+      }, timestamp, APP_VERSION));
       const records = sortRecords([...resolvedNewRecords, ...loadRecords(date)]);
       saveRecords(date, records);
       openCategoryIndexes = [];
