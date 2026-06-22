@@ -2650,8 +2650,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
-    const APP_VERSION = "v1.4.15";
-    const APP_BUILD_TIME = "2026-06-22 11:41";
+    const APP_VERSION = "v1.4.16";
+    const APP_BUILD_TIME = "2026-06-22 11:48";
 
     const entryForm = document.querySelector("#entryForm");
     const entryInput = document.querySelector("#entryInput");
@@ -5717,13 +5717,13 @@
       return uniqueIds.length === expectedDifference ? uniqueIds : [];
     }
 
-    function createManualSyncBackup(localData, remoteData) {
+    function createManualSyncBackup(localData, remoteData, reason = "confirmed-local-snapshot-override") {
       const createdAt = new Date().toISOString();
       const backupKey = `backup_before_manual_sync_${createdAt.replace(/[:.]/g, "-")}`;
       try {
         localStorage.setItem(backupKey, JSON.stringify({
           createdAt,
-          reason: "confirmed-local-snapshot-override",
+          reason,
           localData,
           remoteData
         }));
@@ -5932,6 +5932,7 @@
       const sameIds = [];
       const conflicts = [];
       const resolvedConflicts = [];
+      const manuallyResolvedConflicts = [];
       const onlyLocal = [];
       const onlyRemote = [];
       const allIds = new Set([...localById.keys(), ...remoteById.keys()]);
@@ -5964,15 +5965,29 @@
             });
             mergedRecords.push(winner === "remote" ? remoteOccurrence.record : localOccurrence.record);
           } else {
-            conflicts.push({
-              dateKey,
-              recordId,
-              conflictFields,
-              localRecord: localOccurrence.record,
-              remoteRecord: remoteOccurrence.record,
-              reason: "content differs without reliable distinct updatedAt"
-            });
-            mergedRecords.push(localOccurrence.record);
+            const resolutionTimestamp = getReliableIsoTimestamp(options.resolutionTimestamp);
+            if (options.conflictResolution === "prefer-local" && resolutionTimestamp) {
+              const resolvedRecord = stampNewRecord(localOccurrence.record, resolutionTimestamp);
+              manuallyResolvedConflicts.push({
+                dateKey,
+                recordId,
+                conflictFields,
+                winner: "local",
+                resolutionTimestamp,
+                reason: "explicit manual local conflict resolution"
+              });
+              mergedRecords.push(resolvedRecord);
+            } else {
+              conflicts.push({
+                dateKey,
+                recordId,
+                conflictFields,
+                localRecord: localOccurrence.record,
+                remoteRecord: remoteOccurrence.record,
+                reason: "content differs without reliable distinct updatedAt"
+              });
+              mergedRecords.push(localOccurrence.record);
+            }
           }
         } else if (localOccurrence) {
           onlyLocal.push({ dateKey, recordId, record: localOccurrence.record });
@@ -6054,6 +6069,7 @@
         mergedRecords: stableMergedRecords,
         conflicts,
         resolvedConflicts,
+        manuallyResolvedConflicts,
         skippedUnsafe,
         onlyLocal,
         onlyRemote,
@@ -6132,7 +6148,9 @@
         dateKey,
         {
           localDateExists: Object.prototype.hasOwnProperty.call(localRecords, dateKey),
-          remoteDateExists: Object.prototype.hasOwnProperty.call(remoteRecords, dateKey)
+          remoteDateExists: Object.prototype.hasOwnProperty.call(remoteRecords, dateKey),
+          conflictResolution: options.conflictResolution || null,
+          resolutionTimestamp: options.resolutionTimestamp || null
         }
       ));
 
@@ -6184,6 +6202,7 @@
         crossDateIdConflicts,
         conflicts: dateResults.flatMap((result) => result.conflicts),
         resolvedConflicts: dateResults.flatMap((result) => result.resolvedConflicts),
+        manuallyResolvedConflicts: dateResults.flatMap((result) => result.manuallyResolvedConflicts),
         sparseRisks: dateResults.filter((result) => result.sparseRisk.hasRisk)
           .map((result) => result.sparseRisk),
         skippedUnsafe: dateResults.flatMap((result) => result.skippedUnsafe),
@@ -6198,6 +6217,19 @@
         throw error;
       }
       return data;
+    }
+
+    function canManuallyPreferLocalGistConflicts(plan) {
+      if (!plan || plan.conflicts.length === 0) return false;
+      if (plan.invalidDateRecords.length > 0
+        || plan.datasetDuplicateIds.length > 0
+        || plan.crossDateIdConflicts.length > 0
+        || plan.sparseRisks.length > 0) return false;
+      return plan.dateResults.every((result) => (
+        result.countSafety.preservesLocalCount
+        && result.countSafety.preservesRemoteCount
+        && result.skippedUnsafe.every((item) => item.type === "unresolved-conflict")
+      ));
     }
 
     async function auditDotlogSyncState() {
@@ -6746,7 +6778,41 @@
           const localTime = Date.parse(localData.last_updated || "1970-01-01T00:00:00.000Z");
           const remoteTime = Date.parse(remoteBaseline.last_updated || "1970-01-01T00:00:00.000Z");
           const settingsPreference = requiresInitialMerge || remoteTime > localTime ? "remote" : "local";
-          nextData = mergeGistData(localData, remoteBaseline, { settingsPreference });
+          try {
+            nextData = mergeGistData(localData, remoteBaseline, { settingsPreference });
+          } catch (error) {
+            const mergePlan = error?.mergePlan;
+            if (error?.message !== "GIST_MERGE_UNSAFE"
+              || !options.confirmLocalConflicts
+              || !canManuallyPreferLocalGistConflicts(mergePlan)) {
+              throw error;
+            }
+
+            const backupKey = createManualSyncBackup(
+              localData,
+              remoteBaseline,
+              "confirmed-local-record-conflict-resolution"
+            );
+            if (!backupKey) throw new Error("MANUAL_SYNC_BACKUP_FAILED");
+            const conflictSummary = mergePlan.conflicts.slice(0, 5).map((conflict) => {
+              const title = conflict.localRecord?.text
+                || conflict.localRecord?.title
+                || conflict.localRecord?.summary
+                || "未命名记录";
+              return `${conflict.dateKey} · ${title}`;
+            }).join("\n");
+            const remainingCount = Math.max(0, mergePlan.conflicts.length - 5);
+            const confirmed = confirm(
+              `检测到 ${mergePlan.conflicts.length} 条同 ID 内容冲突，旧版本缺少可靠更新时间。\n\n${conflictSummary}${remainingCount ? `\n另有 ${remainingCount} 条` : ""}\n\n已创建本地/远程完整备份。是否以当前设备中的记录为准并继续同步？`
+            );
+            if (!confirmed) throw error;
+
+            nextData = mergeGistData(localData, remoteBaseline, {
+              settingsPreference,
+              conflictResolution: "prefer-local",
+              resolutionTimestamp: getNowIso()
+            });
+          }
           assertNoRecordCountRegression(nextData, localData, "初始合并覆盖本地");
           assertNoRecordCountRegression(nextData, remoteBaseline, "初始合并覆盖远程");
           const shouldApplyLocally = !isGistDataEquivalentForMerge(localData, nextData);
@@ -9215,7 +9281,8 @@
         saveSyncInputs();
         await syncWithGist({
           mergeLocal: !isCurrentGistInitialized(),
-          confirmLocalDeletions: true
+          confirmLocalDeletions: true,
+          confirmLocalConflicts: true
         });
       });
 
