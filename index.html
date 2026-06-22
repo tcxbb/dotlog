@@ -2650,8 +2650,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
-    const APP_VERSION = "v1.4.16";
-    const APP_BUILD_TIME = "2026-06-22 11:48";
+    const APP_VERSION = "v1.4.17";
+    const APP_BUILD_TIME = "2026-06-22 11:58";
 
     const entryForm = document.querySelector("#entryForm");
     const entryInput = document.querySelector("#entryInput");
@@ -6031,6 +6031,14 @@
         remoteToLocalWouldRegress: remoteList.length < localList.length,
         localToRemoteWouldRegress: localList.length < remoteList.length
       };
+      const remoteSparseExplainedByLocalOnly = hasSparseRisk
+        && sparseRisk.sparseSide === "remote"
+        && onlyLocal.length > 0
+        && localList.length - remoteList.length <= onlyLocal.length;
+      const manuallyAllowedSparseRisk = options.allowRemoteSparseWithLocalOnly === true
+        && remoteSparseExplainedByLocalOnly;
+      sparseRisk.manualUnionEligible = remoteSparseExplainedByLocalOnly;
+      sparseRisk.manuallyAllowed = manuallyAllowedSparseRisk;
 
       const unsafeOriginalRecords = [
         ...missingIds.map((item) => item.record).filter(Boolean),
@@ -6058,7 +6066,9 @@
         ...malformedRecords.map((item) => ({ type: "malformed-record", ...item })),
         ...conflicts.map((item) => ({ type: "unresolved-conflict", ...item })),
         ...suspectedDuplicates.map((item) => ({ type: "suspected-duplicate", ...item })),
-        ...(hasSparseRisk ? [{ type: "sparse-risk", ...sparseRisk }] : [])
+        ...(hasSparseRisk && !manuallyAllowedSparseRisk
+          ? [{ type: "sparse-risk", ...sparseRisk }]
+          : [])
       ];
       const shouldApply = skippedUnsafe.length === 0
         && countSafety.preservesLocalCount
@@ -6150,7 +6160,8 @@
           localDateExists: Object.prototype.hasOwnProperty.call(localRecords, dateKey),
           remoteDateExists: Object.prototype.hasOwnProperty.call(remoteRecords, dateKey),
           conflictResolution: options.conflictResolution || null,
-          resolutionTimestamp: options.resolutionTimestamp || null
+          resolutionTimestamp: options.resolutionTimestamp || null,
+          allowRemoteSparseWithLocalOnly: options.allowRemoteSparseWithLocalOnly === true
         }
       ));
 
@@ -6219,17 +6230,45 @@
       return data;
     }
 
-    function canManuallyPreferLocalGistConflicts(plan) {
-      if (!plan || plan.conflicts.length === 0) return false;
+    function canManuallyResolveGistMergeRisks(plan) {
+      if (!plan) return false;
+      const hasEligibleSparseRisk = plan.sparseRisks.some((risk) => risk.manualUnionEligible);
+      if (plan.conflicts.length === 0 && !hasEligibleSparseRisk) return false;
       if (plan.invalidDateRecords.length > 0
         || plan.datasetDuplicateIds.length > 0
         || plan.crossDateIdConflicts.length > 0
-        || plan.sparseRisks.length > 0) return false;
+        || plan.sparseRisks.some((risk) => !risk.manualUnionEligible)) return false;
       return plan.dateResults.every((result) => (
         result.countSafety.preservesLocalCount
         && result.countSafety.preservesRemoteCount
-        && result.skippedUnsafe.every((item) => item.type === "unresolved-conflict")
+        && result.skippedUnsafe.every((item) => (
+          item.type === "unresolved-conflict" || item.type === "sparse-risk"
+        ))
       ));
+    }
+
+    function describeGistMergeBlockers(plan) {
+      if (!plan) return "无法读取合并风险详情";
+      const blockers = [];
+      const skippedTypes = new Set(plan.skippedUnsafe.map((item) => item.type));
+      if (skippedTypes.has("missing-id")) blockers.push("存在缺少 ID 的记录");
+      if (skippedTypes.has("duplicate-id") || plan.datasetDuplicateIds.length > 0) {
+        blockers.push("存在重复 record.id");
+      }
+      if (skippedTypes.has("malformed-record") || plan.invalidDateRecords.length > 0) {
+        blockers.push("存在格式异常的记录或日期数据");
+      }
+      if (skippedTypes.has("suspected-duplicate")) blockers.push("存在疑似重复记录");
+      if (plan.crossDateIdConflicts.length > 0) blockers.push("相同 record.id 出现在不同日期");
+      if (plan.sparseRisks.some((risk) => risk.sparseSide === "local")) {
+        blockers.push("当前设备记录明显少于远程");
+      }
+      if (plan.sparseRisks.some((risk) => (
+        risk.sparseSide === "remote" && !risk.manualUnionEligible
+      ))) {
+        blockers.push("远程记录较少，但无法由本地独有记录安全解释");
+      }
+      return blockers.length > 0 ? blockers.join("；") : "存在尚不能安全自动处理的合并风险";
     }
 
     async function auditDotlogSyncState() {
@@ -6782,16 +6821,20 @@
             nextData = mergeGistData(localData, remoteBaseline, { settingsPreference });
           } catch (error) {
             const mergePlan = error?.mergePlan;
-            if (error?.message !== "GIST_MERGE_UNSAFE"
-              || !options.confirmLocalConflicts
-              || !canManuallyPreferLocalGistConflicts(mergePlan)) {
+            const manuallyResolvable = error?.message === "GIST_MERGE_UNSAFE"
+              && options.confirmLocalConflicts
+              && canManuallyResolveGistMergeRisks(mergePlan);
+            if (!manuallyResolvable) {
+              if (error?.message === "GIST_MERGE_UNSAFE" && options.confirmLocalConflicts) {
+                alert(`同步仍被安全保护阻止：\n\n${describeGistMergeBlockers(mergePlan)}`);
+              }
               throw error;
             }
 
             const backupKey = createManualSyncBackup(
               localData,
               remoteBaseline,
-              "confirmed-local-record-conflict-resolution"
+              "confirmed-local-conflict-and-sparse-union"
             );
             if (!backupKey) throw new Error("MANUAL_SYNC_BACKUP_FAILED");
             const conflictSummary = mergePlan.conflicts.slice(0, 5).map((conflict) => {
@@ -6802,15 +6845,28 @@
               return `${conflict.dateKey} · ${title}`;
             }).join("\n");
             const remainingCount = Math.max(0, mergePlan.conflicts.length - 5);
+            const localOnlyCount = mergePlan.dateResults
+              .reduce((total, result) => total + result.onlyLocal.length, 0);
+            const sparseDateCount = mergePlan.sparseRisks.length;
+            const conflictSection = mergePlan.conflicts.length > 0
+              ? `检测到 ${mergePlan.conflicts.length} 条同 ID 内容冲突，旧版本缺少可靠更新时间。\n\n${conflictSummary}${remainingCount ? `\n另有 ${remainingCount} 条` : ""}\n\n`
+              : "";
+            const sparseSection = sparseDateCount > 0
+              ? `远程有 ${sparseDateCount} 个日期尚未包含当前设备新增的记录；合并将保留两端全部记录，其中本地独有 ${localOnlyCount} 条。\n\n`
+              : "";
+            const actionQuestion = mergePlan.conflicts.length > 0
+              ? "是否以当前设备中的冲突版本为准，并保留两端所有独有记录后继续同步？"
+              : "是否保留两端所有独有记录并继续同步？";
             const confirmed = confirm(
-              `检测到 ${mergePlan.conflicts.length} 条同 ID 内容冲突，旧版本缺少可靠更新时间。\n\n${conflictSummary}${remainingCount ? `\n另有 ${remainingCount} 条` : ""}\n\n已创建本地/远程完整备份。是否以当前设备中的记录为准并继续同步？`
+              `${conflictSection}${sparseSection}已创建本地/远程完整备份。${actionQuestion}`
             );
             if (!confirmed) throw error;
 
             nextData = mergeGistData(localData, remoteBaseline, {
               settingsPreference,
               conflictResolution: "prefer-local",
-              resolutionTimestamp: getNowIso()
+              resolutionTimestamp: getNowIso(),
+              allowRemoteSparseWithLocalOnly: true
             });
           }
           assertNoRecordCountRegression(nextData, localData, "初始合并覆盖本地");
