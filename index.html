@@ -1760,11 +1760,13 @@
     .calendar-import-overlay {
       position: fixed;
       inset: 0;
-      z-index: 100;
+      z-index: 13000;
       display: grid;
       place-items: center;
       padding: 20px;
       background: rgba(26, 26, 26, 0.24);
+      pointer-events: auto;
+      isolation: isolate;
     }
 
     .calendar-import-panel {
@@ -1831,14 +1833,21 @@
 
     .export-range-field {
       display: grid;
+      min-width: 0;
+      overflow: hidden;
       gap: 6px;
       color: var(--muted);
       font-size: 13px;
     }
 
     .export-range-input {
+      display: block;
       width: 100%;
       min-width: 0;
+      max-width: 100%;
+      min-inline-size: 0;
+      max-inline-size: 100%;
+      box-sizing: border-box;
       border: 1px solid var(--border);
       border-radius: 8px;
       background: #FFFFFF;
@@ -2512,15 +2521,26 @@
     }
 
     .color-swatch {
-      width: 24px;
-      height: 24px;
+      width: 28px;
+      height: 28px;
       border: 2px solid transparent;
       border-radius: 999px;
+      box-shadow: none;
       cursor: pointer;
+      transition: box-shadow 0.15s ease, transform 0.1s ease;
+      -webkit-tap-highlight-color: transparent;
     }
 
     .color-swatch.is-selected {
-      border-color: var(--text);
+      border-color: transparent;
+      box-shadow:
+        0 0 0 2px var(--paper),
+        0 0 0 4px var(--swatch-color);
+      box-shadow:
+        0 0 0 2px var(--paper),
+        0 0 0 4px var(--swatch-color),
+        0 0 8px 2px color-mix(in srgb, var(--swatch-color) 40%, transparent);
+      transform: scale(1.05);
     }
 
     .add-category-actions {
@@ -2838,8 +2858,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
-    const APP_VERSION = "v1.5.1";
-    const APP_BUILD_TIME = "2026-06-22 16:45";
+    const APP_VERSION = "v1.5.2";
+    const APP_BUILD_TIME = "2026-06-22 17:20";
     const MIN_READER_VERSION = "v1.4.20";
 
     const entryForm = document.querySelector("#entryForm");
@@ -2967,6 +2987,7 @@
     let addingTagCategoryIndex = null;
     let editingTag = null;
     let addingCategory = false;
+    let newCategoryNameDraft = "";
     let openColorPickerIndex = null;
     let collapsedSettingsCategoryIndexes = new Set();
     let openCategoryActionMenuIndex = null;
@@ -8338,6 +8359,7 @@
         const day = document.createElement("button");
         day.className = "week-day";
         day.type = "button";
+        day.dataset.dateKey = formatDateKey(date);
         day.setAttribute("aria-label", formatDateLabel(date));
         if (!isCurrent) day.tabIndex = -1;
         if (isSameDate(date, todayDate)) day.classList.add("is-today");
@@ -8891,6 +8913,9 @@
 
     function completeWeekSwipe(dayOffset, exitDirection) {
       if (weekSwipeAnimating) return;
+      const selectedDateKey = formatDateKey(viewedDate);
+      const selectedDate = dateFromKey(selectedDateKey);
+      const targetDate = offsetDate(selectedDate, dayOffset);
       weekSwipeAnimating = true;
       const width = Math.max(weekNav.clientWidth, 1);
       const startX = Math.max(-width, Math.min(width, weekSwipeCurrentX));
@@ -8912,7 +8937,7 @@
           weekDays.removeEventListener("transitionend", finishWeekSwipe);
           if (completionTimer !== null) clearTimeout(completionTimer);
 
-          viewedDate = offsetDate(viewedDate, dayOffset);
+          viewedDate = targetDate;
           currentWeekStart = getWeekStart(viewedDate);
           resetDateViewState();
           weekSwipeCurrentX = 0;
@@ -10539,6 +10564,7 @@
         addButton.textContent = "+ 添加新分类";
         addButton.addEventListener("click", () => {
           addingCategory = true;
+          newCategoryNameDraft = "";
           selectedNewCategoryColor = presetColors[0].value;
           renderSettingsPage();
         });
@@ -10553,6 +10579,10 @@
       input.className = "inline-input";
       input.type = "text";
       input.placeholder = "分类名称";
+      input.value = newCategoryNameDraft;
+      input.addEventListener("input", () => {
+        newCategoryNameDraft = input.value;
+      });
 
       const swatches = document.createElement("div");
       swatches.className = "color-swatches";
@@ -10561,6 +10591,7 @@
         swatch.className = "color-swatch";
         swatch.type = "button";
         swatch.style.backgroundColor = value;
+        swatch.style.setProperty("--swatch-color", value);
         swatch.setAttribute("aria-label", `${label} ${value}`);
         swatch.classList.toggle("is-selected", value === selectedNewCategoryColor);
         swatch.addEventListener("click", () => {
@@ -10599,6 +10630,7 @@
         });
         saveCategoryConfig(config);
         addingCategory = false;
+        newCategoryNameDraft = "";
         renderSettingsPage();
       }
 
@@ -10606,12 +10638,14 @@
         if (event.key === "Enter") confirmAddCategory();
         if (event.key === "Escape") {
           addingCategory = false;
+          newCategoryNameDraft = "";
           renderSettingsPage();
         }
       });
       confirmButton.addEventListener("click", confirmAddCategory);
       cancelButton.addEventListener("click", () => {
         addingCategory = false;
+        newCategoryNameDraft = "";
         renderSettingsPage();
       });
 
