@@ -2650,8 +2650,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
-    const APP_VERSION = "v1.4.17";
-    const APP_BUILD_TIME = "2026-06-22 11:58";
+    const APP_VERSION = "v1.4.18";
+    const APP_BUILD_TIME = "2026-06-22 12:09";
 
     const entryForm = document.querySelector("#entryForm");
     const entryInput = document.querySelector("#entryInput");
@@ -4715,6 +4715,470 @@
         console.info(report.risks.recommendation);
       }
       console.info("审计为只读操作：未修改记录、未写 localStorage、未触发保存或同步。");
+      console.groupEnd();
+      return report;
+    }
+
+    function auditDotlogLegacyFallbackUsage() {
+      const dateKeyPattern = /^time_tracker_(\d{4}-\d{2}-\d{2})$/;
+      const cleanString = (value) => typeof value === "string" ? value.trim() : "";
+      const cleanArray = (value) => Array.isArray(value)
+        ? value.map(cleanString).filter(Boolean)
+        : [];
+      const addToIndex = (index, key, value) => {
+        if (!key) return;
+        if (!index.has(key)) index.set(key, []);
+        index.get(key).push(value);
+      };
+      const increment = (map, key, amount = 1) => {
+        const safeKey = key || "（空）";
+        map.set(safeKey, (map.get(safeKey) || 0) + amount);
+      };
+      const mapToCounts = (map, keyName) => [...map.entries()]
+        .map(([value, count]) => ({ [keyName]: value, count }))
+        .sort((left, right) => right.count - left.count || String(left[keyName]).localeCompare(String(right[keyName])));
+      const sameNameSet = (left, right) => {
+        const leftSet = [...new Set(left)].sort();
+        const rightSet = [...new Set(right)].sort();
+        return leftSet.length === rightSet.length
+          && leftSet.every((value, index) => value === rightSet[index]);
+      };
+      const locationFor = (dateKey, recordIndex, record) => ({
+        dateKey,
+        recordIndex,
+        recordId: cleanString(record?.id) || null,
+        title: cleanString(record?.title)
+          || cleanString(record?.text)
+          || cleanString(record?.summary)
+          || cleanString(record?.description)
+          || null
+      });
+
+      const storageErrors = [];
+      const abnormalDateKeys = [];
+      const dateEntries = [];
+      for (let index = 0; index < localStorage.length; index += 1) {
+        const key = localStorage.key(index);
+        if (!key?.startsWith("time_tracker_")) continue;
+        const match = key.match(dateKeyPattern);
+        if (!match) {
+          abnormalDateKeys.push(key);
+          continue;
+        }
+        try {
+          const records = JSON.parse(localStorage.getItem(key));
+          if (!Array.isArray(records)) throw new Error("记录数据不是数组");
+          dateEntries.push({ key, dateKey: match[1], records });
+        } catch (error) {
+          storageErrors.push({
+            key,
+            error: error instanceof Error ? error.message : String(error)
+          });
+        }
+      }
+      dateEntries.sort((left, right) => left.dateKey.localeCompare(right.dateKey));
+
+      let categoryConfigError = null;
+      let categoryConfig = null;
+      const rawCategoryConfig = localStorage.getItem("category_config");
+      if (!rawCategoryConfig) {
+        categoryConfigError = "category_config 不存在";
+      } else {
+        try {
+          categoryConfig = JSON.parse(rawCategoryConfig);
+        } catch (error) {
+          categoryConfigError = error instanceof Error ? error.message : String(error);
+        }
+      }
+
+      const categoryById = new Map();
+      const categoryByName = new Map();
+      const tagById = new Map();
+      const tagByName = new Map();
+      const categories = Array.isArray(categoryConfig?.categories) ? categoryConfig.categories : [];
+      categories.forEach((category, categoryIndex) => {
+        if (!category || typeof category !== "object" || Array.isArray(category)) return;
+        const categoryRef = {
+          id: cleanString(category.id) || null,
+          name: cleanString(category.name) || null,
+          categoryIndex,
+          tags: []
+        };
+        addToIndex(categoryById, categoryRef.id, categoryRef);
+        addToIndex(categoryByName, categoryRef.name, categoryRef);
+        if (!Array.isArray(category.tags)) return;
+        category.tags.forEach((tag, tagIndex) => {
+          const tagRef = {
+            id: cleanString(tag?.id) || null,
+            name: cleanString(typeof tag === "string" ? tag : tag?.name) || null,
+            categoryId: categoryRef.id,
+            categoryName: categoryRef.name,
+            categoryIndex,
+            tagIndex
+          };
+          categoryRef.tags.push(tagRef);
+          addToIndex(tagById, tagRef.id, tagRef);
+          addToIndex(tagByName, tagRef.name, tagRef);
+        });
+      });
+
+      const report = {
+        generatedAt: new Date().toISOString(),
+        readOnly: true,
+        definitions: {
+          categoryFallback: "categoryId 缺失或无法解析，resolveRecordCategoryName 必须读取 record.category",
+          tagFallback: "没有任何 tagId 可解析，resolveRecordTagNames 必须读取 record.tags",
+          completeIdFields: "categoryId 可解析，tagIds 字段存在且其中所有 ID 均可解析；空 tagIds 表示合法无标签",
+          mismatch: "仅比较可解析 ID 得到的当前名称与仍保留的旧名称；数组顺序不计为不一致"
+        },
+        overview: {
+          dateCount: dateEntries.length,
+          recordCount: dateEntries.reduce((sum, entry) => sum + entry.records.length, 0),
+          withCategoryAndCategoryId: 0,
+          withTagsAndTagIds: 0,
+          withTagsAndTagIdsFields: 0,
+          onlyLegacyCategoryWithoutCategoryId: 0,
+          onlyLegacyTagsWithoutTagIds: 0,
+          categoryIdTagIdsCompleteRecords: 0,
+          completelyWithoutCategoryOrTags: 0
+        },
+        fallback: {
+          categoryFallbackCount: 0,
+          tagFallbackCount: 0,
+          recordsWithAnyFallback: 0,
+          categoryRelevantRecordCount: 0,
+          tagRelevantRecordCount: 0,
+          categoryFallbackRate: 0,
+          tagFallbackRate: 0,
+          recordFallbackRate: 0,
+          categoryHits: [],
+          tagHits: [],
+          byDate: [],
+          byCategoryName: [],
+          byTagName: []
+        },
+        inconsistencies: {
+          categoryNameMismatches: [],
+          tagNameMismatches: [],
+          likelyRenameCount: 0,
+          possibleMappingErrorCount: 0,
+          needsManualReviewCount: 0,
+          partialTagIdResolution: []
+        },
+        idRisks: {
+          unknownCategoryIds: [],
+          unknownTagIds: [],
+          duplicateConfigCategoryIds: [...categoryById.entries()]
+            .filter(([, refs]) => refs.length > 1)
+            .map(([id, refs]) => ({ id, refs })),
+          duplicateConfigTagIds: [...tagById.entries()]
+            .filter(([, refs]) => refs.length > 1)
+            .map(([id, refs]) => ({ id, refs }))
+        },
+        legacyDependencyRisks: {
+          recordsUnsafeToDeleteLegacyFields: [],
+          recordsDependingForDisplayEditStatsExport: [],
+          recordsDependingForSyncCompatibility: [],
+          pathsAffectedIfStopWriting: [
+            "旧客户端与尚未升级的多设备仍会读取和写入 category/tags",
+            "getRecordMergeConflictFields 当前比较 category/tags；停止双写会造成同 ID 形状冲突",
+            "缺 ID 的旧记录仍用 category/tags 参与 legacyRecordFingerprint",
+            "分类/标签删除保护仍用旧名称兜底检查历史引用"
+          ],
+          pathsAffectedIfDeleteFields: [
+            "所有 category/tag fallback 命中记录的列表、编辑、统计、导出和推荐上下文",
+            "旧版本应用和离线 PWA 缓存版本",
+            "迁移审计、冲突审计和人工恢复能力"
+          ]
+        },
+        codeReads: {
+          inventory: [
+            { functions: "resolveRecordCategory / resolveRecordCategoryName", category: "解析函数内部兜底", status: "合理保留" },
+            { functions: "resolveRecordTags / resolveRecordTagNames", category: "解析函数内部兜底", status: "合理保留" },
+            { functions: "resolveClassificationFields", category: "双写保存兼容", status: "合理保留" },
+            { functions: "normalizeRecord", category: "normalize 兼容", status: "合理保留" },
+            { functions: "legacyRecordFingerprint", category: "旧记录 ID 兼容", status: "合理保留" },
+            { functions: "auditDotlogMigrationState / previewDotlogRecordMigration / auditDotlogPostMigrationState / previewGistMergeByRecordId / auditDotlogLegacyFallbackUsage", category: "审计工具", status: "合理保留" },
+            { functions: "getRecordMergeConflictFields", category: "Gist 合并或冲突判断", status: "停止双写前必须改造" },
+            { functions: "inspectStoredRecordReferences", category: "分类标签删除安全检查", status: "合理保留" }
+          ],
+          confirmedResolverBasedPaths: [
+            "记录列表与详情展示",
+            "编辑面板回填",
+            "统计汇总",
+            "CSV / ICS 导出",
+            "推荐条与推荐上下文"
+          ],
+          potentialBusinessReadResiduals: []
+        },
+        readiness: {
+          status: "not-ready",
+          canStartStopWritingPreview: false,
+          localAuditClean: false,
+          requiresMultiDeviceObservation: true,
+          codeBlockers: [
+            "Gist 同 ID 冲突比较仍把 category/tags 视为内容字段",
+            "仍需兼容旧客户端与离线 PWA 缓存版本"
+          ],
+          recommendation: ""
+        },
+        errors: {
+          categoryConfig: categoryConfigError,
+          storage: storageErrors,
+          abnormalDateKeys,
+          malformedRecords: []
+        }
+      };
+
+      const dateFallbackCounts = new Map(dateEntries.map(({ dateKey }) => (
+        [dateKey, { dateKey, categoryFallbackCount: 0, tagFallbackCount: 0, anyFallbackRecordCount: 0 }]
+      )));
+      const categoryFallbackNames = new Map();
+      const tagFallbackNames = new Map();
+      const unsafeRecords = new Map();
+      const legacyPresentRecords = new Map();
+      const categoryHitKeys = new Set();
+      const tagHitKeys = new Set();
+      const markUnsafe = (location, reason) => {
+        const key = `${location.dateKey}:${location.recordIndex}`;
+        if (!unsafeRecords.has(key)) unsafeRecords.set(key, { ...location, reasons: [] });
+        unsafeRecords.get(key).reasons.push(reason);
+      };
+
+      dateEntries.forEach(({ dateKey, records }) => {
+        records.forEach((record, recordIndex) => {
+          const location = locationFor(dateKey, recordIndex, record);
+          if (!record || typeof record !== "object" || Array.isArray(record)) {
+            report.errors.malformedRecords.push({ ...location, error: "记录不是对象" });
+            return;
+          }
+
+          const categoryName = cleanString(record.category);
+          const categoryId = cleanString(record.categoryId);
+          const legacyTagNames = cleanArray(record.tags);
+          const tagIds = cleanArray(record.tagIds);
+          const hasTagIdsField = Array.isArray(record.tagIds);
+          const hasTagsField = Array.isArray(record.tags);
+          const categoryMatches = categoryId ? categoryById.get(categoryId) || [] : [];
+          const resolvedCategory = categoryMatches[0] || null;
+          const resolvedTagRefs = tagIds.flatMap((tagId) => (tagById.get(tagId) || []).slice(0, 1));
+          const unknownTagIds = tagIds.filter((tagId) => !(tagById.get(tagId) || []).length);
+
+          if (categoryName && categoryId) report.overview.withCategoryAndCategoryId += 1;
+          if (legacyTagNames.length > 0 && tagIds.length > 0) report.overview.withTagsAndTagIds += 1;
+          if (hasTagsField && hasTagIdsField) report.overview.withTagsAndTagIdsFields += 1;
+          if (categoryName && !categoryId) report.overview.onlyLegacyCategoryWithoutCategoryId += 1;
+          if (legacyTagNames.length > 0 && tagIds.length === 0) {
+            report.overview.onlyLegacyTagsWithoutTagIds += 1;
+          }
+          if (resolvedCategory && hasTagIdsField && unknownTagIds.length === 0) {
+            report.overview.categoryIdTagIdsCompleteRecords += 1;
+          }
+          if (!categoryName && !categoryId && legacyTagNames.length === 0 && tagIds.length === 0) {
+            report.overview.completelyWithoutCategoryOrTags += 1;
+          }
+
+          const categoryRelevant = Boolean(categoryId || categoryName);
+          const tagRelevant = tagIds.length > 0 || legacyTagNames.length > 0;
+          if (categoryRelevant) report.fallback.categoryRelevantRecordCount += 1;
+          if (tagRelevant) report.fallback.tagRelevantRecordCount += 1;
+
+          const categoryFallback = !resolvedCategory && Boolean(categoryName);
+          const tagFallback = resolvedTagRefs.length === 0 && legacyTagNames.length > 0;
+          const fallbackKey = `${dateKey}:${recordIndex}`;
+          if (categoryName || legacyTagNames.length > 0) {
+            legacyPresentRecords.set(fallbackKey, {
+              ...location,
+              category: categoryName || null,
+              tags: [...legacyTagNames]
+            });
+            markUnsafe(location, "当前 Gist 冲突比较仍要求保留双写旧字段");
+          }
+          if (categoryFallback) {
+            report.fallback.categoryFallbackCount += 1;
+            report.fallback.categoryHits.push({
+              ...location,
+              categoryId: categoryId || null,
+              fallbackCategoryName: categoryName,
+              reason: categoryId ? "categoryId 无法解析" : "缺少 categoryId"
+            });
+            increment(categoryFallbackNames, categoryName);
+            dateFallbackCounts.get(dateKey).categoryFallbackCount += 1;
+            categoryHitKeys.add(fallbackKey);
+            markUnsafe(location, "分类显示依赖 record.category fallback");
+          }
+          if (tagFallback) {
+            report.fallback.tagFallbackCount += 1;
+            report.fallback.tagHits.push({
+              ...location,
+              tagIds: [...tagIds],
+              fallbackTagNames: [...legacyTagNames],
+              reason: tagIds.length > 0 ? "tagIds 均无法解析" : "缺少可解析 tagIds"
+            });
+            legacyTagNames.forEach((tagName) => increment(tagFallbackNames, tagName));
+            dateFallbackCounts.get(dateKey).tagFallbackCount += 1;
+            tagHitKeys.add(fallbackKey);
+            markUnsafe(location, "标签显示依赖 record.tags fallback");
+          }
+          if (categoryFallback || tagFallback) {
+            dateFallbackCounts.get(dateKey).anyFallbackRecordCount += 1;
+          }
+
+          if (categoryId && !resolvedCategory) {
+            report.idRisks.unknownCategoryIds.push({ ...location, categoryId, category: categoryName || null });
+            markUnsafe(location, "categoryId 无法解析");
+          }
+          if (unknownTagIds.length > 0) {
+            report.idRisks.unknownTagIds.push({ ...location, unknownTagIds, tags: [...legacyTagNames] });
+            markUnsafe(location, "存在无法解析的 tagIds");
+          }
+          if (tagIds.length > 0 && resolvedTagRefs.length > 0 && unknownTagIds.length > 0) {
+            report.inconsistencies.partialTagIdResolution.push({
+              ...location,
+              tagIds: [...tagIds],
+              resolvedTagIds: resolvedTagRefs.map((tag) => tag.id),
+              unknownTagIds
+            });
+          }
+
+          if (resolvedCategory && categoryName && resolvedCategory.name !== categoryName) {
+            const legacyMatches = categoryByName.get(categoryName) || [];
+            let classification = "needs-manual-review";
+            let reason = "旧名称与当前 ID 名称不同，无法仅凭本地配置判断";
+            if (legacyMatches.length === 0) {
+              classification = "likely-rename";
+              reason = "旧名称已不在当前配置中，稳定 ID 仍有效，较像正常改名";
+            } else if (legacyMatches.some((category) => category.id !== resolvedCategory.id)) {
+              classification = "possible-mapping-error";
+              reason = "旧名称当前指向另一个分类 ID";
+            }
+            report.inconsistencies.categoryNameMismatches.push({
+              ...location,
+              categoryId,
+              idResolvedName: resolvedCategory.name,
+              legacyName: categoryName,
+              classification,
+              reason
+            });
+          }
+
+          const resolvedTagNames = resolvedTagRefs.map((tag) => tag.name).filter(Boolean);
+          if (resolvedTagNames.length > 0 && legacyTagNames.length > 0
+            && !sameNameSet(resolvedTagNames, legacyTagNames)) {
+            const resolvedTagIds = new Set(resolvedTagRefs.map((tag) => tag.id));
+            const legacyNameMatches = legacyTagNames.flatMap((tagName) => tagByName.get(tagName) || []);
+            const mapsToDifferentId = legacyNameMatches.some((tag) => !resolvedTagIds.has(tag.id));
+            const categoryOwnershipMismatch = resolvedCategory
+              ? resolvedTagRefs.some((tag) => tag.categoryId !== resolvedCategory.id)
+              : false;
+            let classification = "needs-manual-review";
+            let reason = "旧标签名与 ID 当前解析名称不同";
+            if (mapsToDifferentId || categoryOwnershipMismatch) {
+              classification = "possible-mapping-error";
+              reason = mapsToDifferentId
+                ? "旧标签名称当前指向其他标签 ID"
+                : "tagIds 所属分类与 categoryId 不一致";
+            } else if (legacyNameMatches.length < legacyTagNames.length) {
+              classification = "likely-rename";
+              reason = "部分旧标签名称已不在当前配置中，较像正常改名";
+            }
+            report.inconsistencies.tagNameMismatches.push({
+              ...location,
+              tagIds: [...tagIds],
+              idResolvedNames: resolvedTagNames,
+              legacyNames: [...legacyTagNames],
+              classification,
+              reason
+            });
+          }
+        });
+      });
+
+      report.fallback.recordsWithAnyFallback = new Set([...categoryHitKeys, ...tagHitKeys]).size;
+      report.fallback.categoryFallbackRate = report.fallback.categoryRelevantRecordCount > 0
+        ? report.fallback.categoryFallbackCount / report.fallback.categoryRelevantRecordCount
+        : 0;
+      report.fallback.tagFallbackRate = report.fallback.tagRelevantRecordCount > 0
+        ? report.fallback.tagFallbackCount / report.fallback.tagRelevantRecordCount
+        : 0;
+      report.fallback.recordFallbackRate = report.overview.recordCount > 0
+        ? report.fallback.recordsWithAnyFallback / report.overview.recordCount
+        : 0;
+      report.fallback.byDate = [...dateFallbackCounts.values()];
+      report.fallback.byCategoryName = mapToCounts(categoryFallbackNames, "categoryName");
+      report.fallback.byTagName = mapToCounts(tagFallbackNames, "tagName");
+
+      const allMismatches = [
+        ...report.inconsistencies.categoryNameMismatches,
+        ...report.inconsistencies.tagNameMismatches
+      ];
+      report.inconsistencies.likelyRenameCount = allMismatches
+        .filter(({ classification }) => classification === "likely-rename").length;
+      report.inconsistencies.possibleMappingErrorCount = allMismatches
+        .filter(({ classification }) => classification === "possible-mapping-error").length;
+      report.inconsistencies.needsManualReviewCount = allMismatches
+        .filter(({ classification }) => classification === "needs-manual-review").length;
+      report.legacyDependencyRisks.recordsUnsafeToDeleteLegacyFields = [...unsafeRecords.values()];
+      report.legacyDependencyRisks.recordsDependingForDisplayEditStatsExport = [...unsafeRecords.values()]
+        .filter(({ reasons }) => reasons.some((reason) => reason.includes("fallback")));
+      report.legacyDependencyRisks.recordsDependingForSyncCompatibility = [...legacyPresentRecords.values()];
+
+      const fallbackThreshold = Math.max(5, Math.ceil(report.overview.recordCount * 0.01));
+      const hasHardDataRisk = Boolean(
+        categoryConfigError
+        || storageErrors.length
+        || abnormalDateKeys.length
+        || report.errors.malformedRecords.length
+        || report.idRisks.unknownCategoryIds.length
+        || report.idRisks.unknownTagIds.length
+        || report.idRisks.duplicateConfigCategoryIds.length
+        || report.idRisks.duplicateConfigTagIds.length
+        || report.inconsistencies.possibleMappingErrorCount
+      );
+      const hasAnyFallback = report.fallback.recordsWithAnyFallback > 0;
+      const fallbackIsMaterial = report.fallback.recordsWithAnyFallback > fallbackThreshold;
+      report.readiness.localAuditClean = !hasHardDataRisk && !hasAnyFallback;
+      if (hasHardDataRisk || fallbackIsMaterial) {
+        report.readiness.status = "not-ready";
+        report.readiness.recommendation = "仍有实质 fallback 或 ID/映射风险，不适合停止双写。先处理报告中的具体记录。";
+      } else if (hasAnyFallback || report.inconsistencies.needsManualReviewCount > 0) {
+        report.readiness.status = "almost-ready";
+        report.readiness.recommendation = "fallback 已较少，但仍需处理残余记录并继续多设备观察。";
+      } else {
+        report.readiness.status = "ready-for-stop-writing-later";
+        report.readiness.recommendation = "本地数据已不依赖 fallback；但 Gist 冲突比较和旧客户端兼容尚未解耦，建议至少延后两个版本并完成多设备观察后再做停止双写 dry-run。";
+      }
+      report.readiness.canStartStopWritingPreview = report.readiness.status === "ready-for-stop-writing-preview";
+
+      window.__dotlogLegacyFallbackAudit = report;
+      console.group("[Dotlog] 旧字段 fallback 命中与收尾审计（只读）");
+      console.log("完整报告：window.__dotlogLegacyFallbackAudit", report);
+      console.table([{
+        日期数: report.overview.dateCount,
+        记录数: report.overview.recordCount,
+        分类fallback: report.fallback.categoryFallbackCount,
+        标签fallback: report.fallback.tagFallbackCount,
+        任一fallback记录: report.fallback.recordsWithAnyFallback,
+        fallback命中率: `${(report.fallback.recordFallbackRate * 100).toFixed(2)}%`,
+        收尾状态: report.readiness.status
+      }]);
+      console.groupCollapsed("按日期 fallback 分布");
+      console.table(report.fallback.byDate);
+      console.groupEnd();
+      console.groupCollapsed("按分类名 / 标签名 fallback 分布");
+      console.table(report.fallback.byCategoryName);
+      console.table(report.fallback.byTagName);
+      console.groupEnd();
+      console.groupCollapsed("名称不一致与 ID 风险");
+      console.log(report.inconsistencies);
+      console.log(report.idRisks);
+      console.groupEnd();
+      console.groupCollapsed("代码层旧字段读取与删除风险");
+      console.log(report.codeReads);
+      console.log(report.legacyDependencyRisks);
+      console.groupEnd();
+      console.info(report.readiness.recommendation);
+      console.info("审计为只读操作：未写 localStorage、未调用 saveRecords、未触发 Gist 同步。未修改 createdAt / updatedAt。");
       console.groupEnd();
       return report;
     }
