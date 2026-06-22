@@ -2650,8 +2650,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
-    const APP_VERSION = "v1.4.14";
-    const APP_BUILD_TIME = "2026-06-22 01:26";
+    const APP_VERSION = "v1.4.15";
+    const APP_BUILD_TIME = "2026-06-22 11:41";
 
     const entryForm = document.querySelector("#entryForm");
     const entryInput = document.querySelector("#entryInput");
@@ -3072,6 +3072,26 @@
         ? globalThis.crypto.randomUUID()
         : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
       return `${prefix}_${value}`;
+    }
+
+    function getNowIso() {
+      return new Date().toISOString();
+    }
+
+    function getReliableIsoTimestamp(value) {
+      if (typeof value !== "string" || !value.trim()) return null;
+      return Number.isFinite(Date.parse(value)) ? value.trim() : null;
+    }
+
+    function stampNewRecord(record, timestamp = getNowIso()) {
+      const createdAt = getReliableIsoTimestamp(record?.createdAt) || timestamp;
+      const updatedAt = getReliableIsoTimestamp(record?.updatedAt) || timestamp;
+      return { ...record, createdAt, updatedAt };
+    }
+
+    function stampUpdatedRecord(record, timestamp = getNowIso()) {
+      const createdAt = getReliableIsoTimestamp(record?.createdAt) || timestamp;
+      return { ...record, createdAt, updatedAt: timestamp };
     }
 
     function stableStringHash(value, seed = 2166136261) {
@@ -6902,7 +6922,10 @@
       const now = new Date();
       if (!canExtendRecordToNow(record, index, viewedDate, now)) return;
 
-      record.time = formatTime(now);
+      records[index] = stampUpdatedRecord({
+        ...record,
+        time: formatTime(now)
+      }, now.toISOString());
       saveRecords(viewedDate, sortRecords(records));
       render();
     }
@@ -7589,15 +7612,15 @@
       const records = loadRecords(viewedDate);
       if (!records[index]) return;
 
-      Object.assign(
-        records[index],
-        resolveClassificationFields({
+      records[index] = stampUpdatedRecord({
+        ...records[index],
+        ...resolveClassificationFields({
           category: draft.category,
           tags: draft.category ? [...draft.tags] : [],
           categoryId: draft.categoryId,
           tagIds: draft.tagIds
         }, records[index])
-      );
+      });
       saveRecords(viewedDate, records);
       delete classificationDrafts[index];
       openCategoryIndexes = openCategoryIndexes.filter((itemIndex) => itemIndex !== index);
@@ -7623,15 +7646,15 @@
       const records = loadRecords(date);
       if (!records[index]) return;
 
-      Object.assign(
-        records[index],
-        resolveClassificationFields({
+      records[index] = stampUpdatedRecord({
+        ...records[index],
+        ...resolveClassificationFields({
           category,
           tags: [],
           categoryId: findCategoryByName(category)?.id || null,
           tagIds: []
         }, records[index])
-      );
+      });
       saveRecords(date, records);
       delete classificationDrafts[index];
       openCategoryIndexes = [...new Set([...openCategoryIndexes, index])];
@@ -7645,15 +7668,15 @@
       const records = loadRecords(date);
       if (!records[index]) return;
 
-      Object.assign(
-        records[index],
-        resolveClassificationFields({
+      records[index] = stampUpdatedRecord({
+        ...records[index],
+        ...resolveClassificationFields({
           category: records[index].category,
           tags,
           categoryId: records[index].categoryId,
           tagIds: records[index].tagIds
         }, records[index])
-      );
+      });
       saveRecords(date, records);
       delete classificationDrafts[index];
       openTagIndexes = keepPickerOpen
@@ -8036,7 +8059,7 @@
         return;
       }
 
-      records[index] = {
+      records[index] = stampUpdatedRecord({
         ...original,
         id: original.id,
         startTime: editDraft.startTime,
@@ -8051,7 +8074,7 @@
           categoryId: editDraft.categoryId,
           tagIds: editDraft.tagIds
         }, original)
-      };
+      });
 
       saveRecords(viewedDate, sortRecords(records));
       editingRecordIndex = null;
@@ -9684,11 +9707,12 @@
     }
 
     function insertNewRecords(date, newRecords) {
-      const resolvedNewRecords = newRecords.map((record) => ({
+      const timestamp = getNowIso();
+      const resolvedNewRecords = newRecords.map((record) => stampNewRecord({
         ...record,
         id: normalizeReferenceId(record.id) || createStableId("rec"),
         ...resolveClassificationFields(record)
-      }));
+      }, timestamp));
       const records = sortRecords([...resolvedNewRecords, ...loadRecords(date)]);
       saveRecords(date, records);
       openCategoryIndexes = [];
