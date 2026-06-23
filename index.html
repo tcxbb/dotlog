@@ -2875,8 +2875,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
-    const APP_VERSION = "v1.5.5";
-    const APP_BUILD_TIME = "2026-06-23 17:05";
+    const APP_VERSION = "v1.5.6";
+    const APP_BUILD_TIME = "2026-06-23 17:25";
     const MIN_READER_VERSION = "v1.4.20";
 
     const entryForm = document.querySelector("#entryForm");
@@ -3301,7 +3301,8 @@
       const viewEnd = new Date(Math.min(end.getTime(), dayEnd.getTime()));
       return {
         viewStartAt: `${formatDateKey(viewStart)}T${formatTime(viewStart)}`,
-        viewEndAt: `${formatDateKey(viewEnd)}T${formatTime(viewEnd)}`
+        viewEndAt: `${formatDateKey(viewEnd)}T${formatTime(viewEnd)}`,
+        endsAtDayEnd: viewEnd.getTime() === dayEnd.getTime()
       };
     }
 
@@ -3312,7 +3313,8 @@
         __dayViewSourceIndex: { value: sourceIndex },
         __dayViewIsReference: { value: sourceDateKey !== viewedDateKey },
         __dayViewStartAt: { value: viewSlice?.viewStartAt || record.startTime || "" },
-        __dayViewEndAt: { value: viewSlice?.viewEndAt || record.endTime || record.time || "" }
+        __dayViewEndAt: { value: viewSlice?.viewEndAt || record.endTime || record.time || "" },
+        __dayViewEndsAtDayEnd: { value: Boolean(viewSlice?.endsAtDayEnd) }
       });
       return displayRecord;
     }
@@ -3399,11 +3401,16 @@
       return "晚上";
     }
 
+    function getDayViewRecordPeriod(record) {
+      if (record.__dayViewEndsAtDayEnd) return "晚上";
+      return getTimePeriod(timePart(record.__dayViewEndAt) || timePart(record.endTime));
+    }
+
     const periodOrder = ["晚上", "下午", "早上", "夜间"];
 
     function groupRecordsByPeriod(records) {
       return records.reduce((groups, record, index) => {
-        const period = getTimePeriod(timePart(record.__dayViewEndAt) || timePart(record.endTime));
+        const period = getDayViewRecordPeriod(record);
         if (!groups[period]) groups[period] = [];
         groups[period].push({
           record,
