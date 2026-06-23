@@ -1036,6 +1036,18 @@
       word-break: break-all;
     }
 
+    .cross-day-badge {
+      display: inline-block;
+      font-size: 10px;
+      color: #999;
+      background: #f0f0f0;
+      border-radius: 4px;
+      padding: 1px 5px;
+      margin-left: 6px;
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+
     .record-tags {
       margin-left: 4px;
       color: var(--muted);
@@ -2863,8 +2875,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
-    const APP_VERSION = "v1.5.3";
-    const APP_BUILD_TIME = "2026-06-22 18:00";
+    const APP_VERSION = "v1.5.4";
+    const APP_BUILD_TIME = "2026-06-23 16:40";
     const MIN_READER_VERSION = "v1.4.20";
 
     const entryForm = document.querySelector("#entryForm");
@@ -3247,6 +3259,77 @@
       return (end.getTime() - start.getTime()) / 60000;
     }
 
+    function isCrossDayRecord(record) {
+      const startDate = datePart(record?.startTime || "");
+      const endDate = datePart(record?.endTime || record?.time || "");
+      return Boolean(startDate && endDate && startDate !== endDate);
+    }
+
+    function recordIntersectsDay(record, date) {
+      const start = localDateFromDateTime(record?.startTime || "");
+      const end = localDateFromDateTime(record?.endTime || record?.time || "");
+      if (!start || !end) return false;
+
+      const dayStart = startOfDay(date);
+      const dayEnd = offsetDate(dayStart, 1);
+      if (end.getTime() === start.getTime()) {
+        return start >= dayStart && start < dayEnd;
+      }
+      return end > dayStart && start < dayEnd;
+    }
+
+    function getRecordDurationWithinDay(record, date) {
+      const start = localDateFromDateTime(record?.startTime || "");
+      const end = localDateFromDateTime(record?.endTime || record?.time || "");
+      if (!start || !end) return NaN;
+
+      const dayStart = startOfDay(date);
+      const dayEnd = offsetDate(dayStart, 1);
+      const clampedStart = new Date(Math.max(start.getTime(), dayStart.getTime()));
+      const clampedEnd = new Date(Math.min(end.getTime(), dayEnd.getTime()));
+      return Math.max(0, (clampedEnd.getTime() - clampedStart.getTime()) / 60000);
+    }
+
+    function attachDayViewMeta(record, sourceDateKey, sourceIndex, viewedDateKey) {
+      const displayRecord = { ...record };
+      Object.defineProperties(displayRecord, {
+        __dayViewSourceDate: { value: sourceDateKey },
+        __dayViewSourceIndex: { value: sourceIndex },
+        __dayViewIsReference: { value: sourceDateKey !== viewedDateKey }
+      });
+      return displayRecord;
+    }
+
+    function getRecordStorageDateKeys() {
+      const keys = [];
+      for (let index = 0; index < localStorage.length; index += 1) {
+        const match = localStorage.key(index)?.match(/^time_tracker_(\d{4}-\d{2}-\d{2})$/);
+        if (match) keys.push(match[1]);
+      }
+      return keys.sort();
+    }
+
+    function getRecordsForDayView(date) {
+      const viewedDateKey = formatDateKey(date);
+      return getRecordStorageDateKeys()
+        .flatMap((sourceDateKey) => loadRecords(dateFromKey(sourceDateKey))
+          .map((record, sourceIndex) => ({ record, sourceDateKey, sourceIndex })))
+        .filter(({ record }) => recordIntersectsDay(record, date))
+        .map(({ record, sourceDateKey, sourceIndex }) => (
+          attachDayViewMeta(record, sourceDateKey, sourceIndex, viewedDateKey)
+        ))
+        .sort((first, second) => {
+          const firstTime = localDateFromDateTime(first.startTime || first.endTime)?.getTime() || 0;
+          const secondTime = localDateFromDateTime(second.startTime || second.endTime)?.getTime() || 0;
+          return secondTime - firstTime;
+        });
+    }
+
+    function getRecordsForDayExport(date) {
+      const dateKey = formatDateKey(date);
+      return loadRecords(date).filter((record) => datePart(record.startTime || "") === dateKey);
+    }
+
     function timeToMinutes(time) {
       const [hours, minutes] = time.split(":").map(Number);
       return hours * 60 + minutes;
@@ -3281,7 +3364,8 @@
     function summaryTextForRecords(records, date) {
       if (records.length === 0) return "";
       const totalMinutes = records.reduce((total, record, index) => {
-        const duration = getRecordInterval(records, index, date)?.duration;
+        const interval = getRecordInterval(records, index, date);
+        const duration = interval?.isInvalid ? NaN : getRecordDurationWithinDay(record, date);
         return total + (Number.isFinite(duration) && duration >= 0 ? duration : 0);
       }, 0);
       return totalMinutes > 0
@@ -3303,7 +3387,11 @@
       return records.reduce((groups, record, index) => {
         const period = getTimePeriod(timePart(record.startTime) || timePart(record.endTime));
         if (!groups[period]) groups[period] = [];
-        groups[period].push({ record, index });
+        groups[period].push({
+          record,
+          index: Number.isInteger(record.__dayViewSourceIndex) ? record.__dayViewSourceIndex : index,
+          displayIndex: index
+        });
         return groups;
       }, {});
     }
@@ -8556,8 +8644,8 @@
       return table;
     }
 
-    function buildDateRecordsContent(date, interactive = true) {
-      const records = loadRecords(date);
+    function buildDateRecordsContent(date, interactive = true, dayViewRecords = getRecordsForDayView(date)) {
+      const records = dayViewRecords;
 
       if (records.length === 0) {
         const emptyWrap = document.createElement("div");
@@ -8583,14 +8671,17 @@
         header.textContent = period;
         list.append(header);
 
-        groups[period].forEach(({ record, index }) => {
+        groups[period].forEach(({ record, index, displayIndex }) => {
+          const isReferenceRecord = Boolean(record.__dayViewIsReference);
+          const canEditRecord = interactive && !isReferenceRecord;
           const item = document.createElement("li");
           item.className = "record";
           item.dataset.index = String(index);
+          if (isReferenceRecord) item.dataset.sourceDate = record.__dayViewSourceDate || "";
 
-          const classificationDraft = interactive && (isCategoryOpen(index) || isTagOpen(index))
+          const classificationDraft = canEditRecord && (isCategoryOpen(index) || isTagOpen(index))
             ? getClassificationDraft(index, record)
-            : interactive
+            : canEditRecord
               ? classificationDrafts[index]
               : null;
           const displayCategory = classificationDraft
@@ -8600,7 +8691,7 @@
             ? classificationDraft.tags
             : resolveRecordTagNames(record);
           const displayColor = displayCategory ? categoryColor(displayCategory) : null;
-          const interval = getRecordInterval(records, index, date);
+          const interval = getRecordInterval(records, displayIndex, date);
           const durationText = interval?.isInvalid
             ? "时间段有误，结束早于开始"
             : interval ? formatDuration(interval.duration) : "—";
@@ -8620,6 +8711,13 @@
           title.textContent = record.text;
           mainRow.append(title);
 
+          if (isCrossDayRecord(record)) {
+            const crossDayBadge = document.createElement("span");
+            crossDayBadge.className = "cross-day-badge";
+            crossDayBadge.textContent = "跨天";
+            mainRow.append(crossDayBadge);
+          }
+
           if (displayTags.length > 0) {
             const tags = document.createElement("span");
             tags.className = "record-tags";
@@ -8631,7 +8729,7 @@
           subRow.className = "record-sub";
 
           if (displayCategory) {
-            if (interactive) {
+            if (canEditRecord) {
               const category = document.createElement("button");
               category.className = "record-category";
               category.type = "button";
@@ -8682,7 +8780,7 @@
 
           time.append(startTime);
 
-          if (interactive && editingRecordIndex !== index && canExtendRecordToNow(record, index, date)) {
+          if (canEditRecord && editingRecordIndex !== index && canExtendRecordToNow(record, index, date)) {
             const extendButton = document.createElement("button");
             extendButton.className = "extend-to-now-button";
             extendButton.type = "button";
@@ -8696,19 +8794,19 @@
             time.append(extendButton);
           }
 
-          if (interactive && isCategoryOpen(index)) {
+          if (canEditRecord && isCategoryOpen(index)) {
             body.append(createCategoryPicker(record, index));
           }
 
-          if (interactive && displayCategory && isTagOpen(index)) {
+          if (canEditRecord && displayCategory && isTagOpen(index)) {
             body.append(createTagPicker(record, index));
           }
 
-          if (interactive && editingRecordIndex === index && editDraft) {
+          if (canEditRecord && editingRecordIndex === index && editDraft) {
             body.append(createEditPanel(index));
           }
 
-          if (interactive) {
+          if (canEditRecord) {
             let longPressTriggered = false;
             let longPressResetTimer = null;
             item.addEventListener("touchstart", (event) => {
@@ -8770,9 +8868,9 @@
     }
 
     function renderDatePageContent(date, interactive = true, includeTable = tableExpanded) {
-      const records = loadRecords(date);
+      const records = getRecordsForDayView(date);
       const tableContent = includeTable ? buildRenderedTable(records, date) : null;
-      const recordsContent = buildDateRecordsContent(date, interactive);
+      const recordsContent = buildDateRecordsContent(date, interactive, records);
       const summaryText = summaryTextForRecords(records, date);
       return { records, tableContent, recordsContent, summaryText };
     }
@@ -10863,7 +10961,7 @@
 
     function exportCsv(startDate, endDate) {
       const tableRows = datesInRange(startDate, endDate).flatMap((date) => (
-        buildTimeRows(loadRecords(date), date).rows.map((row) => ({
+        buildTimeRows(getRecordsForDayExport(date), date).rows.map((row) => ({
           ...row,
           date: formatDateKey(date)
         }))
@@ -11177,7 +11275,7 @@
     }
 
     function openCalendarImportPanel() {
-      const records = loadRecords(viewedDate);
+      const records = getRecordsForDayExport(viewedDate);
 
       if (!records.some((record) => resolveRecordCategoryName(record))) {
         alert("请先为至少一条记录选择分类");
@@ -11203,7 +11301,7 @@
       const eventsByCategory = {};
       let eventCount = 0;
       datesInRange(startDate, endDate).forEach((date) => {
-        const dayEvents = buildCalendarEvents(loadRecords(date), date);
+        const dayEvents = buildCalendarEvents(getRecordsForDayExport(date), date);
         eventCount += dayEvents.eventCount;
         Object.entries(dayEvents.eventsByCategory).forEach(([category, events]) => {
           if (!eventsByCategory[category]) eventsByCategory[category] = [];
