@@ -2875,8 +2875,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
-    const APP_VERSION = "v1.5.4";
-    const APP_BUILD_TIME = "2026-06-23 16:40";
+    const APP_VERSION = "v1.5.5";
+    const APP_BUILD_TIME = "2026-06-23 17:05";
     const MIN_READER_VERSION = "v1.4.20";
 
     const entryForm = document.querySelector("#entryForm");
@@ -3290,12 +3290,29 @@
       return Math.max(0, (clampedEnd.getTime() - clampedStart.getTime()) / 60000);
     }
 
-    function attachDayViewMeta(record, sourceDateKey, sourceIndex, viewedDateKey) {
+    function getRecordViewSlice(record, date) {
+      const start = localDateFromDateTime(record?.startTime || "");
+      const end = localDateFromDateTime(record?.endTime || record?.time || "");
+      if (!start || !end) return null;
+
+      const dayStart = startOfDay(date);
+      const dayEnd = offsetDate(dayStart, 1);
+      const viewStart = new Date(Math.max(start.getTime(), dayStart.getTime()));
+      const viewEnd = new Date(Math.min(end.getTime(), dayEnd.getTime()));
+      return {
+        viewStartAt: `${formatDateKey(viewStart)}T${formatTime(viewStart)}`,
+        viewEndAt: `${formatDateKey(viewEnd)}T${formatTime(viewEnd)}`
+      };
+    }
+
+    function attachDayViewMeta(record, sourceDateKey, sourceIndex, viewedDateKey, viewSlice) {
       const displayRecord = { ...record };
       Object.defineProperties(displayRecord, {
         __dayViewSourceDate: { value: sourceDateKey },
         __dayViewSourceIndex: { value: sourceIndex },
-        __dayViewIsReference: { value: sourceDateKey !== viewedDateKey }
+        __dayViewIsReference: { value: sourceDateKey !== viewedDateKey },
+        __dayViewStartAt: { value: viewSlice?.viewStartAt || record.startTime || "" },
+        __dayViewEndAt: { value: viewSlice?.viewEndAt || record.endTime || record.time || "" }
       });
       return displayRecord;
     }
@@ -3315,12 +3332,13 @@
         .flatMap((sourceDateKey) => loadRecords(dateFromKey(sourceDateKey))
           .map((record, sourceIndex) => ({ record, sourceDateKey, sourceIndex })))
         .filter(({ record }) => recordIntersectsDay(record, date))
-        .map(({ record, sourceDateKey, sourceIndex }) => (
-          attachDayViewMeta(record, sourceDateKey, sourceIndex, viewedDateKey)
-        ))
+        .map(({ record, sourceDateKey, sourceIndex }) => {
+          const viewSlice = getRecordViewSlice(record, date);
+          return attachDayViewMeta(record, sourceDateKey, sourceIndex, viewedDateKey, viewSlice);
+        })
         .sort((first, second) => {
-          const firstTime = localDateFromDateTime(first.startTime || first.endTime)?.getTime() || 0;
-          const secondTime = localDateFromDateTime(second.startTime || second.endTime)?.getTime() || 0;
+          const firstTime = localDateFromDateTime(first.__dayViewEndAt || first.endTime)?.getTime() || 0;
+          const secondTime = localDateFromDateTime(second.__dayViewEndAt || second.endTime)?.getTime() || 0;
           return secondTime - firstTime;
         });
     }
@@ -3385,7 +3403,7 @@
 
     function groupRecordsByPeriod(records) {
       return records.reduce((groups, record, index) => {
-        const period = getTimePeriod(timePart(record.startTime) || timePart(record.endTime));
+        const period = getTimePeriod(timePart(record.__dayViewEndAt) || timePart(record.endTime));
         if (!groups[period]) groups[period] = [];
         groups[period].push({
           record,
