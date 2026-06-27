@@ -2875,8 +2875,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
-    const APP_VERSION = "v1.5.6";
-    const APP_BUILD_TIME = "2026-06-23 17:25";
+    const APP_VERSION = "v1.5.7";
+    const APP_BUILD_TIME = "2026-06-27 16:20";
     const MIN_READER_VERSION = "v1.4.20";
 
     const entryForm = document.querySelector("#entryForm");
@@ -6853,9 +6853,54 @@
       return records;
     }
 
-    function getRecordCountRegressions(candidateRecords = {}, baselineRecords = {}) {
+    function getRecordIdOccurrencesByDate(recordsByDate = {}) {
+      const index = new Map();
+      Object.entries(recordsByDate || {}).forEach(([dateKey, records]) => {
+        if (!Array.isArray(records)) return;
+        records.forEach((record, recordIndex) => {
+          const recordId = normalizeReferenceId(record?.id);
+          if (!recordId) return;
+          if (!index.has(recordId)) index.set(recordId, []);
+          index.get(recordId).push({ dateKey, recordIndex, record });
+        });
+      });
+      return index;
+    }
+
+    function findCrossDateMovedRecordIds(localRecords = {}, remoteRecords = {}) {
+      const localById = getRecordIdOccurrencesByDate(localRecords);
+      const remoteById = getRecordIdOccurrencesByDate(remoteRecords);
+      const movedIds = [];
+
+      remoteById.forEach((remoteOccurrences, recordId) => {
+        const localOccurrences = localById.get(recordId) || [];
+        if (remoteOccurrences.length !== 1 || localOccurrences.length !== 1) return;
+
+        const remoteOccurrence = remoteOccurrences[0];
+        const localOccurrence = localOccurrences[0];
+        if (remoteOccurrence.dateKey === localOccurrence.dateKey) return;
+        if (datePart(localOccurrence.record?.startTime || "") !== localOccurrence.dateKey) return;
+
+        const localSameDateRecords = Array.isArray(localRecords?.[remoteOccurrence.dateKey])
+          ? localRecords[remoteOccurrence.dateKey]
+          : [];
+        const stillExistsOnRemoteDate = localSameDateRecords.some((record) => (
+          normalizeReferenceId(record?.id) === recordId
+        ));
+        if (!stillExistsOnRemoteDate) movedIds.push(recordId);
+      });
+
+      return movedIds;
+    }
+
+    function getRecordCountRegressions(candidateRecords = {}, baselineRecords = {}, options = {}) {
+      const ignoredMovedIds = new Set(options.ignoreMovedRecordIds || []);
       return Object.keys(baselineRecords).flatMap((dateKey) => {
-        const before = Array.isArray(baselineRecords[dateKey]) ? baselineRecords[dateKey].length : 0;
+        const baselineList = Array.isArray(baselineRecords[dateKey]) ? baselineRecords[dateKey] : [];
+        const before = baselineList.filter((record) => {
+          const recordId = normalizeReferenceId(record?.id);
+          return !(recordId && ignoredMovedIds.has(recordId));
+        }).length;
         const after = Array.isArray(candidateRecords[dateKey]) ? candidateRecords[dateKey].length : 0;
         return after < before ? [{ dateKey, before, after }] : [];
       });
@@ -8156,11 +8201,21 @@
         const deletionIdsToClear = new Set(getPendingDeletedRecordIds());
         let deletionApplied = false;
         let didPush = false;
+        let nextData = null;
 
         if (remoteData && deletionIdsToClear.size > 0) {
           const deletionResult = applyRecordDeletionIds(remoteData, [...deletionIdsToClear]);
           remoteData = deletionResult.data;
           deletionApplied = deletionResult.removedIds.length > 0;
+        }
+
+        if (remoteData) {
+          const movedRecordIds = findCrossDateMovedRecordIds(localData.records, remoteData.records);
+          if (movedRecordIds.length > 0) {
+            const deletionResult = applyRecordDeletionIds(remoteData, movedRecordIds);
+            remoteData = deletionResult.data;
+            deletionApplied = deletionApplied || deletionResult.removedIds.length > 0;
+          }
         }
 
         if (remoteData && options.confirmLocalDeletions) {
@@ -8178,10 +8233,14 @@
               );
               if (!confirmed) throw new Error("RECORD_COUNT_REGRESSION");
 
-              remoteData = {
+              nextData = {
                 ...localData,
-                last_updated: "1970-01-01T00:00:00.000Z"
+                last_updated: new Date().toISOString()
               };
+              applyRemoteData(nextData);
+              await pushGistData(nextData);
+              didPush = true;
+              remoteData = null;
             } else {
               const confirmed = confirm(
                 `远程比本地多 ${remoteOnlyIds.length} 条记录。\n\n如果这些记录是你主动删除的，点击“确定”以本地删除结果同步到远程；否则点击“取消”。`
@@ -8196,8 +8255,6 @@
             }
           }
         }
-
-        let nextData = null;
 
         if (remoteData) {
           const remoteBaseline = remoteData;
@@ -8267,7 +8324,7 @@
             await pushGistData(nextData);
             didPush = true;
           }
-        } else {
+        } else if (!nextData) {
           nextData = { ...localData, last_updated: new Date().toISOString() };
           applyRemoteData(nextData);
           await pushGistData(nextData);
