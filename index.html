@@ -2876,8 +2876,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
-    const APP_VERSION = "v1.5.8";
-    const APP_BUILD_TIME = "2026-06-28 20:40";
+    const APP_VERSION = "v1.5.10";
+    const APP_BUILD_TIME = "2026-06-28 21:02";
     const MIN_READER_VERSION = "v1.4.20";
 
     const entryForm = document.querySelector("#entryForm");
@@ -8203,9 +8203,6 @@
         let deletionApplied = false;
         let didPush = false;
         let nextData = null;
-        const requiresInitialMerge = Boolean(remoteData)
-          && (options.mergeLocal || !isCurrentGistInitialized());
-
         if (remoteData && deletionIdsToClear.size > 0) {
           const deletionResult = applyRecordDeletionIds(remoteData, [...deletionIdsToClear]);
           remoteData = deletionResult.data;
@@ -8221,7 +8218,33 @@
           }
         }
 
-        if (remoteData && !requiresInitialMerge && options.confirmLocalDeletions) {
+        const localRecordCount = countDataRecords(localData);
+        const remoteRecordCount = countDataRecords(remoteData);
+        const remoteToLocalRegressions = remoteData
+          ? getRecordCountRegressions(localData.records, remoteData.records)
+          : [];
+        const shouldRestoreRemoteToIncompleteLocal = Boolean(remoteData)
+          && localRecordCount < remoteRecordCount
+          && remoteToLocalRegressions.length > 0;
+        const requiresInitialMerge = Boolean(remoteData)
+          && (options.mergeLocal || !isCurrentGistInitialized() || shouldRestoreRemoteToIncompleteLocal);
+
+        if (shouldRestoreRemoteToIncompleteLocal) {
+          const backupKey = createManualSyncBackup(localData, remoteData, "restore-remote-over-incomplete-local");
+          if (!backupKey) throw new Error("MANUAL_SYNC_BACKUP_FAILED");
+          nextData = {
+            ...remoteData,
+            last_updated: remoteData.last_updated || new Date().toISOString()
+          };
+          applyRemoteData(nextData);
+          if (remoteDataWasNormalized) {
+            await pushGistData(nextData);
+            didPush = true;
+          }
+          remoteData = null;
+        }
+
+        if (remoteData && !requiresInitialMerge && localRecordCount > 0 && options.confirmLocalDeletions) {
           const remainingRegressions = getRecordCountRegressions(localData.records, remoteData.records);
           if (remainingRegressions.length > 0) {
             const remoteOnlyIds = findConfirmableRemoteOnlyRecordIds(localData, remoteData);
