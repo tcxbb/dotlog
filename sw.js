@@ -1,5 +1,5 @@
 const CACHE_NAME = "dotlog-v1.5.7";
-const ASSETS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
+const ASSETS = ["./", "./index.html", "./manifest.json", "./dotlog-logo-final.svg", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
