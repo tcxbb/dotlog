@@ -2876,8 +2876,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
-    const APP_VERSION = "v1.5.7";
-    const APP_BUILD_TIME = "2026-06-27 16:20";
+    const APP_VERSION = "v1.5.8";
+    const APP_BUILD_TIME = "2026-06-28 20:40";
     const MIN_READER_VERSION = "v1.4.20";
 
     const entryForm = document.querySelector("#entryForm");
@@ -8203,6 +8203,8 @@
         let deletionApplied = false;
         let didPush = false;
         let nextData = null;
+        const requiresInitialMerge = Boolean(remoteData)
+          && (options.mergeLocal || !isCurrentGistInitialized());
 
         if (remoteData && deletionIdsToClear.size > 0) {
           const deletionResult = applyRecordDeletionIds(remoteData, [...deletionIdsToClear]);
@@ -8219,7 +8221,7 @@
           }
         }
 
-        if (remoteData && options.confirmLocalDeletions) {
+        if (remoteData && !requiresInitialMerge && options.confirmLocalDeletions) {
           const remainingRegressions = getRecordCountRegressions(localData.records, remoteData.records);
           if (remainingRegressions.length > 0) {
             const remoteOnlyIds = findConfirmableRemoteOnlyRecordIds(localData, remoteData);
@@ -8259,7 +8261,6 @@
 
         if (remoteData) {
           const remoteBaseline = remoteData;
-          const requiresInitialMerge = options.mergeLocal || !isCurrentGistInitialized();
           const localTime = Date.parse(localData.last_updated || "1970-01-01T00:00:00.000Z");
           const remoteTime = Date.parse(remoteBaseline.last_updated || "1970-01-01T00:00:00.000Z");
           const settingsPreference = requiresInitialMerge || remoteTime > localTime ? "remote" : "local";
