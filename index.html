@@ -807,6 +807,14 @@
       text-decoration: underline;
     }
 
+    .edit-split-button.is-disabled {
+      color: #BBB;
+    }
+
+    .edit-split-button.is-disabled:hover {
+      color: #BBB;
+    }
+
     .table-tools {
       padding-top: 5px;
     }
@@ -1538,6 +1546,37 @@
       display: grid;
       gap: 4px;
       min-width: 0;
+    }
+
+    .edit-split-area {
+      display: grid;
+      gap: 7px;
+      min-width: 0;
+    }
+
+    .edit-split-row {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto auto;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .edit-split-label {
+      white-space: nowrap;
+    }
+
+    .edit-split-confirm {
+      white-space: nowrap;
+    }
+
+    .edit-split-cancel {
+      white-space: nowrap;
+    }
+
+    .edit-split-error {
+      color: #C87B7B;
+      font-size: 13px;
+      line-height: 1.4;
     }
 
     .edit-time-input {
@@ -2610,6 +2649,19 @@
         gap: 5px;
       }
 
+      .edit-time-fields {
+        grid-template-columns: 1fr;
+        gap: 6px;
+      }
+
+      .edit-split-row {
+        grid-template-columns: auto minmax(0, 1fr) auto;
+      }
+
+      .edit-split-confirm {
+        grid-column: 1 / 3;
+      }
+
       .sync-row {
         grid-template-columns: 1fr;
         gap: 6px;
@@ -2876,8 +2928,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
-    const APP_VERSION = "v1.5.10";
-    const APP_BUILD_TIME = "2026-06-28 21:02";
+    const APP_VERSION = "v1.6.0";
+    const APP_BUILD_TIME = "2026-06-29 00:00";
     const MIN_READER_VERSION = "v1.4.20";
 
     const entryForm = document.querySelector("#entryForm");
@@ -2992,6 +3044,9 @@
     let editDraft = null;
     let editCategoryExpanded = false;
     let editTagsExpanded = false;
+    let editSplitOpen = false;
+    let editSplitTime = "";
+    let editSplitError = "";
     let timePickerTarget = null;
     let timePickerValue = "00:00";
     const timePickerScrollFrames = new WeakMap();
@@ -3264,6 +3319,33 @@
       const startDate = datePart(record?.startTime || "");
       const endDate = datePart(record?.endTime || record?.time || "");
       return Boolean(startDate && endDate && startDate !== endDate);
+    }
+
+    function calcMidpoint(startTime, endTime) {
+      const start = localDateFromDateTime(startTime);
+      const end = localDateFromDateTime(endTime);
+      if (!start || !end) return timePart(startTime) || "00:00";
+      const mid = new Date((start.getTime() + end.getTime()) / 2);
+      return formatTime(mid);
+    }
+
+    function validateSplitPoint(splitTimeStr, record) {
+      if (!isValidTimeInput(splitTimeStr)) {
+        return { valid: false, msg: "请选择正确的拆分时间" };
+      }
+
+      const date = record.startTime.slice(0, 10);
+      const splitFull = `${date}T${splitTimeStr}`;
+      const splitDt = localDateFromDateTime(splitFull);
+      const startDt = localDateFromDateTime(record.startTime);
+      const endDt = localDateFromDateTime(record.endTime);
+      if (!splitDt || !startDt || !endDt) {
+        return { valid: false, msg: "请选择正确的拆分时间" };
+      }
+
+      if (splitDt <= startDt) return { valid: false, msg: "拆分点必须晚于开始时间" };
+      if (splitDt >= endDt) return { valid: false, msg: "拆分点必须早于结束时间" };
+      return { valid: true, splitFull };
     }
 
     function recordIntersectsDay(record, date) {
@@ -8534,8 +8616,7 @@
       openCategoryIndexes = [];
       openTagIndexes = [];
       classificationDrafts = {};
-      editingRecordIndex = null;
-      editDraft = null;
+      clearEditPanelState();
     }
 
     function setViewedDate(date) {
@@ -9503,6 +9584,16 @@
       return picker;
     }
 
+    function clearEditPanelState() {
+      editingRecordIndex = null;
+      editDraft = null;
+      editCategoryExpanded = false;
+      editTagsExpanded = false;
+      editSplitOpen = false;
+      editSplitTime = "";
+      editSplitError = "";
+    }
+
     function startEditingRecord(index, record) {
       const interval = getRecordInterval(loadRecords(viewedDate), index, viewedDate);
       const resolvedCategory = resolveRecordCategory(record);
@@ -9526,6 +9617,9 @@
       };
       editCategoryExpanded = false;
       editTagsExpanded = false;
+      editSplitOpen = false;
+      editSplitTime = "";
+      editSplitError = "";
       openCategoryIndexes = openCategoryIndexes.filter((itemIndex) => itemIndex !== index);
       openTagIndexes = openTagIndexes.filter((itemIndex) => itemIndex !== index);
       render();
@@ -9533,10 +9627,7 @@
 
     function cancelEditingRecord() {
       closeTimePicker();
-      editingRecordIndex = null;
-      editDraft = null;
-      editCategoryExpanded = false;
-      editTagsExpanded = false;
+      clearEditPanelState();
       render();
     }
 
@@ -9709,6 +9800,83 @@
       return true;
     }
 
+    function buildEditedRecordDraft(original) {
+      const nextStartTime = localDateTime(editDraft.startDate, editDraft.startTime);
+      const nextEndTime = localDateTime(editDraft.endDate, editDraft.endTime);
+      return {
+        ...original,
+        id: original.id,
+        startTime: nextStartTime,
+        endTime: nextEndTime,
+        text: editDraft.text.trim(),
+        note: editDraft.note.trim() || null,
+        isBackfill: original.isBackfill || false,
+        isSplit: original.isSplit || false,
+        ...resolveClassificationFields({
+          category: editDraft.category,
+          tags: editDraft.category ? [...editDraft.tags] : [],
+          categoryId: editDraft.categoryId,
+          tagIds: editDraft.tagIds
+        }, original)
+      };
+    }
+
+    function splitRecord(original, splitPoint) {
+      const now = getNowIso();
+      const recordA = stampUpdatedRecord({
+        ...original,
+        endTime: splitPoint
+      }, now);
+
+      const recordB = {
+        ...original,
+        id: createStableId("rec"),
+        startTime: splitPoint,
+        endTime: original.endTime,
+        createdAt: now,
+        updatedAt: now,
+        writerVersion: APP_VERSION,
+        updatedByVersion: APP_VERSION,
+        isSplit: true,
+        splitFromId: original.id
+      };
+
+      return [recordA, recordB];
+    }
+
+    function splitEditingRecord(index) {
+      if (!editDraft || !isValidTimeInput(editDraft.startTime) || !isValidTimeInput(editDraft.endTime) || !editDraft.text.trim()) return;
+
+      const records = loadRecords(viewedDate);
+      const original = records[index];
+      if (!original) return;
+
+      const splitSource = buildEditedRecordDraft(original);
+      if (!validateEditedRecordInterval(records, index, splitSource.startTime, splitSource.endTime)) return;
+
+      if (isCrossDayRecord(splitSource)) {
+        showToast("跨天记录暂不支持拆分");
+        return;
+      }
+
+      const validation = validateSplitPoint(editSplitTime, splitSource);
+      if (!validation.valid) {
+        editSplitError = validation.msg;
+        render();
+        return;
+      }
+
+      const [recordA, recordB] = splitRecord(splitSource, validation.splitFull);
+      const nextRecords = [...records];
+      nextRecords.splice(index, 1, recordA, recordB);
+      if (!saveRecords(viewedDate, sortRecords(nextRecords))) return;
+
+      closeTimePicker();
+      clearEditPanelState();
+      render();
+      showToast("已拆分记录");
+    }
+
     function saveEditedRecord(index) {
       if (!editDraft || !isValidTimeInput(editDraft.startTime) || !isValidTimeInput(editDraft.endTime) || !editDraft.text.trim()) return;
 
@@ -9725,22 +9893,7 @@
         return;
       }
 
-      const updatedRecord = stampUpdatedRecord({
-        ...original,
-        id: original.id,
-        startTime: nextStartTime,
-        endTime: nextEndTime,
-        text: editDraft.text.trim(),
-        note: editDraft.note.trim() || null,
-        isBackfill: original.isBackfill || false,
-        isSplit: original.isSplit || false,
-        ...resolveClassificationFields({
-          category: editDraft.category,
-          tags: editDraft.category ? [...editDraft.tags] : [],
-          categoryId: editDraft.categoryId,
-          tagIds: editDraft.tagIds
-        }, original)
-      });
+      const updatedRecord = stampUpdatedRecord(buildEditedRecordDraft(original));
 
       if (editDraft.startDate === formatDateKey(viewedDate)) {
         records[index] = updatedRecord;
@@ -9756,10 +9909,7 @@
         });
         if (!removed) return;
       }
-      editingRecordIndex = null;
-      editDraft = null;
-      editCategoryExpanded = false;
-      editTagsExpanded = false;
+      clearEditPanelState();
       render();
     }
 
@@ -9935,6 +10085,10 @@
       cancelButton.className = "panel-cancel";
       cancelButton.type = "button";
       cancelButton.textContent = "取消";
+      const splitButton = document.createElement("button");
+      splitButton.className = "panel-cancel edit-split-button";
+      splitButton.type = "button";
+      splitButton.textContent = "拆";
 
       function validateEditPanel() {
         const validStartTime = isValidTimeInput(editDraft.startTime);
@@ -9971,6 +10125,27 @@
       });
       saveButton.addEventListener("click", () => saveEditedRecord(index));
       cancelButton.addEventListener("click", cancelEditingRecord);
+      const draftCrossDay = isCrossDayRecord({
+        startTime: localDateTime(editDraft.startDate, editDraft.startTime),
+        endTime: localDateTime(editDraft.endDate, editDraft.endTime)
+      });
+      splitButton.classList.toggle("is-disabled", draftCrossDay);
+      splitButton.addEventListener("click", () => {
+        if (draftCrossDay) {
+          showToast("跨天记录暂不支持拆分");
+          return;
+        }
+
+        editSplitOpen = !editSplitOpen;
+        editSplitError = "";
+        if (editSplitOpen && !editSplitTime) {
+          editSplitTime = calcMidpoint(
+            localDateTime(editDraft.startDate, editDraft.startTime),
+            localDateTime(editDraft.endDate, editDraft.endTime)
+          );
+        }
+        render();
+      });
 
       const timeFields = document.createElement("div");
       timeFields.className = "edit-time-fields";
@@ -10023,8 +10198,59 @@
       const dateTimeRange = document.createElement("div");
       dateTimeRange.className = "edit-datetime-range";
       dateTimeRange.append(dateRange, timeRange);
+      if (editSplitOpen) {
+        const splitArea = document.createElement("div");
+        splitArea.className = "edit-split-area";
+        const splitRow = document.createElement("div");
+        splitRow.className = "edit-split-row";
+        const splitLabel = document.createElement("span");
+        splitLabel.className = "edit-split-label";
+        splitLabel.textContent = "拆分点：";
+        const splitInput = document.createElement("input");
+        splitInput.className = "edit-input edit-time-input edit-split-time-input";
+        splitInput.type = "text";
+        splitInput.inputMode = "none";
+        splitInput.readOnly = true;
+        splitInput.value = editSplitTime || calcMidpoint(
+          localDateTime(editDraft.startDate, editDraft.startTime),
+          localDateTime(editDraft.endDate, editDraft.endTime)
+        );
+        editSplitTime = splitInput.value;
+        splitInput.setAttribute("aria-label", "拆分点");
+        splitInput.addEventListener("input", () => {
+          editSplitTime = splitInput.value.trim();
+          editSplitError = "";
+        });
+        splitInput.addEventListener("click", () => openTimePicker(splitInput, "选择拆分点"));
+
+        const splitConfirm = document.createElement("button");
+        splitConfirm.className = "panel-save edit-split-confirm";
+        splitConfirm.type = "button";
+        splitConfirm.textContent = "确认拆分";
+        splitConfirm.addEventListener("click", () => splitEditingRecord(index));
+
+        const splitCancel = document.createElement("button");
+        splitCancel.className = "panel-cancel edit-split-cancel";
+        splitCancel.type = "button";
+        splitCancel.textContent = "取消";
+        splitCancel.addEventListener("click", () => {
+          editSplitOpen = false;
+          editSplitError = "";
+          render();
+        });
+
+        splitRow.append(splitLabel, splitInput, splitConfirm, splitCancel);
+        splitArea.append(splitRow);
+        if (editSplitError) {
+          const splitError = document.createElement("div");
+          splitError.className = "edit-split-error";
+          splitError.textContent = editSplitError;
+          splitArea.append(splitError);
+        }
+        dateTimeRange.append(splitArea);
+      }
       timeFields.append(timeLabel, dateTimeRange);
-      actions.append(saveButton, cancelButton);
+      actions.append(saveButton, cancelButton, splitButton);
       panel.append(actions, timeFields, textLine, noteLine, error, categorySection, tagSection);
       validateEditPanel();
 
@@ -10043,8 +10269,7 @@
       openTagActionMenuKey = null;
       tagDetailDraft = null;
       tagDetailReturnScrollY = null;
-      editingRecordIndex = null;
-      editDraft = null;
+      clearEditPanelState();
       closeCalendarMenu();
       closeCalendarImportPanel();
       closeExportRangePanel();
@@ -11453,8 +11678,7 @@
       openCategoryIndexes = [];
       openTagIndexes = [];
       classificationDrafts = {};
-      editingRecordIndex = null;
-      editDraft = null;
+      clearEditPanelState();
       tableExpanded = false;
       return records;
     }
@@ -12001,8 +12225,7 @@
       openCategoryIndexes = [];
       openTagIndexes = [];
       classificationDrafts = {};
-      editingRecordIndex = null;
-      editDraft = null;
+      clearEditPanelState();
       render();
     });
 
