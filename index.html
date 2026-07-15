@@ -2938,8 +2938,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
-    const APP_VERSION = "v1.6.3";
-    const APP_BUILD_TIME = "2026-07-15 12:45";
+    const APP_VERSION = "v1.6.5";
+    const APP_BUILD_TIME = "2026-07-15 13:20";
     const MIN_READER_VERSION = "v1.4.20";
 
     const entryForm = document.querySelector("#entryForm");
@@ -3084,6 +3084,7 @@
     let syncTimer = null;
     let syncInProgress = false;
     let schemaV1BackupReady = false;
+    let calendarImportObjectUrls = [];
     let syncStatus = {
       state: "unconfigured",
       message: "未配置",
@@ -11408,7 +11409,6 @@
       return [
         "BEGIN:VCALENDAR",
         "VERSION:2.0",
-        "METHOD:PUBLISH",
         "PRODID:-//时间打点器//CN",
         "CALSCALE:GREGORIAN",
         ...events,
@@ -11532,6 +11532,7 @@
     function closeCalendarImportPanel() {
       calendarImportOverlay.classList.add("is-hidden");
       calendarImportPanel.replaceChildren();
+      cleanupCalendarImportObjectUrls();
     }
 
     function sanitizeFilePart(value) {
@@ -11542,22 +11543,43 @@
         || "calendar";
     }
 
-    function calendarImportHref(events) {
+    function cleanupCalendarImportObjectUrls() {
+      calendarImportObjectUrls.forEach((url) => URL.revokeObjectURL(url));
+      calendarImportObjectUrls = [];
+    }
+
+    function createCalendarImportUrl(events) {
       const icsContent = buildIcsContent(events);
-      return `data:text/calendar;charset=utf-8,${encodeURIComponent(icsContent)}`;
+      const blob = new Blob([icsContent], { type: "text/calendar;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      calendarImportObjectUrls.push(url);
+      return url;
     }
 
     function createCalendarImportLink(category, events) {
       const link = document.createElement("a");
       link.className = "calendar-import-button";
-      link.href = calendarImportHref(events);
-      link.download = `Dotlog_${formatDateKey(viewedDate)}_${sanitizeFilePart(category)}.ics`;
+      link.href = createCalendarImportUrl(events);
+      link.target = "_blank";
+      link.rel = "noopener";
       link.style.color = categoryColor(category);
       link.textContent = "→ 导入";
       return link;
     }
 
+    function createCalendarDownloadLink(category, events) {
+      const link = document.createElement("a");
+      link.className = "calendar-import-button calendar-import-download";
+      link.href = createCalendarImportUrl(events);
+      link.download = `Dotlog_${formatDateKey(viewedDate)}_${sanitizeFilePart(category)}.ics`;
+      link.style.color = categoryColor(category);
+      link.textContent = "下载 .ics";
+      return link;
+    }
+
     function renderCalendarImportPanel(eventsByCategory) {
+      cleanupCalendarImportObjectUrls();
+
       const head = document.createElement("div");
       head.className = "calendar-import-head";
 
@@ -11576,7 +11598,7 @@
 
       const copy = document.createElement("p");
       copy.className = "calendar-import-copy";
-      copy.textContent = "点击每个分类，逐个导入到日历";
+      copy.textContent = "点击“导入”打开系统日历，也可以下载 .ics 文件";
 
       const list = document.createElement("div");
       list.className = "calendar-import-list";
@@ -11601,7 +11623,10 @@
         const importActions = document.createElement("div");
         importActions.className = "calendar-import-actions";
 
-        importActions.append(createCalendarImportLink(category, events));
+        importActions.append(
+          createCalendarImportLink(category, events),
+          createCalendarDownloadLink(category, events)
+        );
 
         row.append(categoryCell, count, importActions);
         list.append(row);
