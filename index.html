@@ -307,6 +307,9 @@
       font-size: 11px;
       text-align: center;
       white-space: nowrap;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
     }
 
     .app-footer-brand {
@@ -317,6 +320,9 @@
       font-family: Georgia, 'Times New Roman', serif;
       font-size: 12px;
       cursor: pointer;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
     }
 
     .app-footer-version {
@@ -2928,8 +2934,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
-    const APP_VERSION = "v1.6.0";
-    const APP_BUILD_TIME = "2026-06-29 00:00";
+    const APP_VERSION = "v1.6.1";
+    const APP_BUILD_TIME = "2026-07-15 12:00";
     const MIN_READER_VERSION = "v1.4.20";
 
     const entryForm = document.querySelector("#entryForm");
@@ -3039,6 +3045,8 @@
     let ctxTargetIndex = null;
     let ctxTargetRecord = null;
     let longPressTimer = null;
+    let ctxOverlayPointer = null;
+    let editOutsidePointer = null;
     let settingsMode = "main";
     let editingRecordIndex = null;
     let editDraft = null;
@@ -8491,12 +8499,17 @@
       return { date: previousDate, record };
     }
 
-    function getDefaultStartTime(date, endTime) {
+    function getDefaultStartTime(date, endTime, endDateKey = formatDateKey(date)) {
       if (!isValidTimeInput(endTime)) return "";
-      const endMinutes = timeToMinutes(endTime);
+      const endDateTime = localDateTime(endDateKey, endTime);
+      const endDate = localDateFromDateTime(endDateTime);
+      if (!endDate) return "";
       const previousRecord = loadRecords(date)
-        .filter((record) => timeToMinutes(timePart(record.endTime)) < endMinutes)
-        .sort((first, second) => timeToMinutes(timePart(second.endTime)) - timeToMinutes(timePart(first.endTime)))[0];
+        .filter((record) => {
+          const recordEnd = localDateFromDateTime(record.endTime);
+          return recordEnd && recordEnd < endDate;
+        })
+        .sort((first, second) => localDateFromDateTime(second.endTime) - localDateFromDateTime(first.endTime))[0];
 
       if (previousRecord) return timePart(previousRecord.endTime);
       return timePart(getPreviousDayBoundary(date)?.record.endTime) || endTime;
@@ -9392,6 +9405,7 @@
 
     function openCtxMenu(index, record, recordEl) {
       window.getSelection()?.removeAllRanges();
+      ctxOverlayPointer = null;
       ctxTargetIndex = index;
       ctxTargetRecord = record;
       ctxOverlay.classList.remove("is-hidden");
@@ -9418,10 +9432,21 @@
 
     function closeCtxMenu() {
       clearTimeout(longPressTimer);
+      ctxOverlayPointer = null;
       ctxOverlay.classList.add("is-hidden");
       ctxMenu.classList.add("is-hidden");
       ctxTargetIndex = null;
       ctxTargetRecord = null;
+    }
+
+    function pointerMovedBeyond(pointer, event, threshold = 10) {
+      if (!pointer) return false;
+      return Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) > threshold;
+    }
+
+    function isEditPanelInteractionTarget(target) {
+      return target instanceof Element
+        && Boolean(target.closest(".edit-panel, .time-picker, .date-picker, .time-picker-overlay"));
     }
 
     function createCategoryBadge(categoryName, options = {}) {
@@ -9585,6 +9610,7 @@
     }
 
     function clearEditPanelState() {
+      editOutsidePointer = null;
       editingRecordIndex = null;
       editDraft = null;
       editCategoryExpanded = false;
@@ -11885,26 +11911,48 @@
         : viewedDate;
     }
 
+    function shouldDefaultEntryEndToToday(startDate, now = new Date()) {
+      if (!backfillPanel.classList.contains("is-hidden")) return false;
+      const todayDate = startOfDay(now);
+      return formatDateKey(startDate) === formatDateKey(addDays(todayDate, -1));
+    }
+
+    function getEntryDefaultTiming(now = new Date()) {
+      const startDate = currentEntryDefaultDate();
+      const startDateKey = formatDateKey(startDate);
+      return {
+        startDate: startDateKey,
+        endDate: shouldDefaultEntryEndToToday(startDate, now) ? formatDateKey(now) : startDateKey,
+        endTime: formatTime(now)
+      };
+    }
+
+    function applyEntryDefaultTiming() {
+      const timing = getEntryDefaultTiming();
+      setEntryDateRange(timing.startDate, timing.endDate);
+      entryEndTime.value = timing.endTime;
+    }
+
     function resetEntryDates() {
-      const key = formatDateKey(currentEntryDefaultDate());
-      setEntryDateRange(key, key);
+      const timing = getEntryDefaultTiming();
+      setEntryDateRange(timing.startDate, timing.endDate);
     }
 
     function resetEntryEndTime() {
-      entryEndTime.value = formatTime(new Date());
+      entryEndTime.value = getEntryDefaultTiming().endTime;
     }
 
     function refreshEntryStartTime(force = false) {
       if (entryStartTimeTouched && !force) return;
       const timing = activeEntryTiming();
-      entryStartTime.value = getDefaultStartTime(timing.date, timing.endTime);
+      entryStartTime.value = getDefaultStartTime(timing.date, timing.endTime, timing.endDate);
     }
 
-    function resolveEntryStartTime(date, endTime) {
+    function resolveEntryStartTime(date, endTime, endDateKey = entryEndDateValue) {
       if (entryStartTimeTouched && isValidTimeInput(entryStartTime.value)) {
         return entryStartTime.value;
       }
-      return getDefaultStartTime(date, endTime);
+      return getDefaultStartTime(date, endTime, endDateKey);
     }
 
     function validateEntryInterval(startDate, startTime, endDate, endTime) {
@@ -11949,8 +11997,7 @@
       fab.classList.add("is-hidden");
       renderEntryClassification();
       renderEntrySuggestion();
-      resetEntryDates();
-      resetEntryEndTime();
+      applyEntryDefaultTiming();
       refreshEntryStartTime(true);
       requestAnimationFrame(() => {
         bottomSheet.classList.add("is-open");
@@ -11985,8 +12032,7 @@
       backfillPanel.classList.toggle("is-hidden", !open);
       if (open) {
         setDateSelectors(backfillYear, backfillMonth, backfillDay, viewedDate);
-        resetEntryDates();
-        resetEntryEndTime();
+        applyEntryDefaultTiming();
         entryStartTimeTouched = false;
         refreshEntryStartTime(true);
         backfillError.classList.add("is-hidden");
@@ -12229,7 +12275,31 @@
       render();
     });
 
-    ctxOverlay.addEventListener("click", closeCtxMenu);
+    ctxOverlay.addEventListener("pointerdown", (event) => {
+      if (event.target !== ctxOverlay) return;
+      ctxOverlayPointer = {
+        pointerId: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+        moved: false
+      };
+    });
+
+    ctxOverlay.addEventListener("pointermove", (event) => {
+      if (!ctxOverlayPointer || ctxOverlayPointer.pointerId !== event.pointerId) return;
+      if (pointerMovedBeyond(ctxOverlayPointer, event)) ctxOverlayPointer.moved = true;
+    }, { passive: true });
+
+    ctxOverlay.addEventListener("pointerup", (event) => {
+      if (!ctxOverlayPointer || ctxOverlayPointer.pointerId !== event.pointerId) return;
+      const shouldClose = event.target === ctxOverlay && !ctxOverlayPointer.moved;
+      ctxOverlayPointer = null;
+      if (shouldClose) closeCtxMenu();
+    });
+
+    ctxOverlay.addEventListener("pointercancel", () => {
+      ctxOverlayPointer = null;
+    });
 
     entryInput.addEventListener("input", () => {
       dismissedEntrySuggestionKey = null;
@@ -12261,6 +12331,7 @@
       minimum: entryStartDateValue,
       onSelect: (value) => {
         setEntryDateRange(entryStartDateValue, value);
+        refreshEntryStartTime();
       }
     }));
 
@@ -12283,8 +12354,7 @@
     });
 
     entryStartAuto.addEventListener("click", () => {
-      resetEntryDates();
-      resetEntryEndTime();
+      applyEntryDefaultTiming();
       entryStartTimeTouched = false;
       refreshEntryStartTime(true);
     });
@@ -12510,8 +12580,29 @@
 
     document.addEventListener("pointerdown", (event) => {
       if (editingRecordIndex === null) return;
-      if (event.target.closest(".edit-panel, .time-picker, .date-picker, .time-picker-overlay")) return;
-      cancelEditingRecord();
+      if (isEditPanelInteractionTarget(event.target)) return;
+      editOutsidePointer = {
+        pointerId: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+        moved: false
+      };
+    });
+
+    document.addEventListener("pointermove", (event) => {
+      if (!editOutsidePointer || editOutsidePointer.pointerId !== event.pointerId) return;
+      if (pointerMovedBeyond(editOutsidePointer, event)) editOutsidePointer.moved = true;
+    }, { passive: true });
+
+    document.addEventListener("pointerup", (event) => {
+      if (!editOutsidePointer || editOutsidePointer.pointerId !== event.pointerId) return;
+      const shouldCancel = !editOutsidePointer.moved && !isEditPanelInteractionTarget(event.target);
+      editOutsidePointer = null;
+      if (shouldCancel) cancelEditingRecord();
+    });
+
+    document.addEventListener("pointercancel", () => {
+      editOutsidePointer = null;
     });
 
     document.addEventListener("click", (event) => {
