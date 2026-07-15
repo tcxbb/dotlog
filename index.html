@@ -2928,8 +2928,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
-    const APP_VERSION = "v1.6.0";
-    const APP_BUILD_TIME = "2026-06-29 00:00";
+    const APP_VERSION = "v1.6.6";
+    const APP_BUILD_TIME = "2026-07-15 13:40";
     const MIN_READER_VERSION = "v1.4.20";
 
     const entryForm = document.querySelector("#entryForm");
@@ -11508,33 +11508,80 @@
       return `${formatDateKey(viewedDate)}::${category}`;
     }
 
-    function navigateToCalendarImport(events) {
+    function createCalendarFile(category, events) {
       const icsContent = buildIcsContent(events);
-      const dataUri = `data:text/calendar;charset=utf-8,${encodeURIComponent(icsContent)}`;
-      window.location.href = dataUri;
+      return new File([icsContent], `Dotlog_${formatDateKey(viewedDate)}_${category}.ics`, {
+        type: "text/calendar"
+      });
+    }
+
+    function canShareCalendarFile(file) {
+      try {
+        return Boolean(
+          navigator.canShare
+          && navigator.canShare({ files: [file] })
+          && navigator.share
+        );
+      } catch {
+        return false;
+      }
+    }
+
+    async function shareCalendarImport(category, events) {
+      const icsFile = createCalendarFile(category, events);
+      if (!canShareCalendarFile(icsFile)) return false;
+
+      await navigator.share({
+        files: [icsFile],
+        title: `Dotlog ${category}`,
+        text: "导入 Dotlog 日历事件"
+      });
+      return true;
     }
 
     function renderImportedCalendarActions(category, events, actions) {
       const status = document.createElement("span");
       status.className = "calendar-import-status";
-      status.textContent = "✓ 已导入";
+      status.textContent = "✓ 已发起分享";
 
       const retryButton = document.createElement("button");
       retryButton.className = "calendar-import-button";
       retryButton.type = "button";
       retryButton.style.color = categoryColor(category);
-      retryButton.textContent = "重新导入";
-      retryButton.addEventListener("click", () => {
-        navigateToCalendarImport(events);
+      retryButton.textContent = "再次分享";
+      retryButton.addEventListener("click", async () => {
+        await triggerCalendarImport(category, events, actions);
       });
 
       actions.replaceChildren(status, retryButton);
     }
 
-    function triggerCalendarImport(category, events, actions) {
-      importedCalendarCategories.add(calendarImportKey(category));
-      renderImportedCalendarActions(category, events, actions);
-      navigateToCalendarImport(events);
+    function renderCalendarImportFallback(category, events, actions) {
+      const downloadLink = document.createElement("a");
+      downloadLink.className = "calendar-import-button";
+      downloadLink.href = `data:text/calendar;charset=utf-8,${encodeURIComponent(buildIcsContent(events))}`;
+      downloadLink.download = `Dotlog_${formatDateKey(viewedDate)}_${category}.ics`;
+      downloadLink.style.color = categoryColor(category);
+      downloadLink.textContent = "下载 .ics";
+      actions.replaceChildren(downloadLink);
+    }
+
+    async function triggerCalendarImport(category, events, actions) {
+      let shared = false;
+      try {
+        shared = await shareCalendarImport(category, events);
+      } catch (error) {
+        if (error?.name === "AbortError") return;
+      }
+
+      if (shared) {
+        importedCalendarCategories.add(calendarImportKey(category));
+        renderImportedCalendarActions(category, events, actions);
+        showExportStatus("已发起分享");
+        return;
+      }
+
+      renderCalendarImportFallback(category, events, actions);
     }
 
     function renderCalendarImportPanel(eventsByCategory) {
