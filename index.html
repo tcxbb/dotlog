@@ -307,6 +307,9 @@
       font-size: 11px;
       text-align: center;
       white-space: nowrap;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
     }
 
     .app-footer-brand {
@@ -317,6 +320,9 @@
       font-family: Georgia, 'Times New Roman', serif;
       font-size: 12px;
       cursor: pointer;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
     }
 
     .app-footer-version {
@@ -2928,8 +2934,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
-    const APP_VERSION = "v1.6.6";
-    const APP_BUILD_TIME = "2026-07-15 13:40";
+    const APP_VERSION = "v1.6.7";
+    const APP_BUILD_TIME = "2026-07-15 14:20";
     const MIN_READER_VERSION = "v1.4.20";
 
     const entryForm = document.querySelector("#entryForm");
@@ -3066,6 +3072,7 @@
     let openCategoryActionMenuIndex = null;
     let openTagActionMenuKey = null;
     let tagDetailDraft = null;
+    let editOutsidePointer = null;
     let tagDetailReturnScrollY = null;
     let selectedNewCategoryColor = "#7B8EC8";
     let applyingRemoteData = false;
@@ -8491,12 +8498,27 @@
       return { date: previousDate, record };
     }
 
-    function getDefaultStartTime(date, endTime) {
+    function getDefaultEntryEndDate(startDateKey) {
+      const todayKey = formatDateKey(new Date());
+      const startDate = dateFromKey(startDateKey);
+      const todayDate = dateFromKey(todayKey);
+      if (!startDate || !todayDate) return startDateKey;
+      return Math.round((todayDate - startDate) / 86400000) === 1 ? todayKey : startDateKey;
+    }
+
+    function getDefaultStartTime(date, endTime, endDateKey = formatDateKey(date)) {
       if (!isValidTimeInput(endTime)) return "";
-      const endMinutes = timeToMinutes(endTime);
+      const endDateTime = localDateFromDateTime(localDateTime(endDateKey, endTime));
       const previousRecord = loadRecords(date)
-        .filter((record) => timeToMinutes(timePart(record.endTime)) < endMinutes)
-        .sort((first, second) => timeToMinutes(timePart(second.endTime)) - timeToMinutes(timePart(first.endTime)))[0];
+        .filter((record) => {
+          const recordEnd = localDateFromDateTime(record.endTime);
+          return recordEnd && endDateTime && recordEnd < endDateTime;
+        })
+        .sort((first, second) => {
+          const firstTime = localDateFromDateTime(first.endTime)?.getTime() || 0;
+          const secondTime = localDateFromDateTime(second.endTime)?.getTime() || 0;
+          return secondTime - firstTime;
+        })[0];
 
       if (previousRecord) return timePart(previousRecord.endTime);
       return timePart(getPreviousDayBoundary(date)?.record.endTime) || endTime;
@@ -11934,7 +11956,7 @@
 
     function resetEntryDates() {
       const key = formatDateKey(currentEntryDefaultDate());
-      setEntryDateRange(key, key);
+      setEntryDateRange(key, getDefaultEntryEndDate(key));
     }
 
     function resetEntryEndTime() {
@@ -11944,14 +11966,14 @@
     function refreshEntryStartTime(force = false) {
       if (entryStartTimeTouched && !force) return;
       const timing = activeEntryTiming();
-      entryStartTime.value = getDefaultStartTime(timing.date, timing.endTime);
+      entryStartTime.value = getDefaultStartTime(timing.date, timing.endTime, timing.endDate);
     }
 
-    function resolveEntryStartTime(date, endTime) {
+    function resolveEntryStartTime(date, endTime, endDate = formatDateKey(date)) {
       if (entryStartTimeTouched && isValidTimeInput(entryStartTime.value)) {
         return entryStartTime.value;
       }
-      return getDefaultStartTime(date, endTime);
+      return getDefaultStartTime(date, endTime, endDate);
     }
 
     function validateEntryInterval(startDate, startTime, endDate, endTime) {
@@ -12078,7 +12100,7 @@
 
       const parsedEntry = parseEntryText(rawText);
       const classification = entryClassificationFields();
-      const startTime = resolveEntryStartTime(targetDate, time);
+      const startTime = resolveEntryStartTime(targetDate, time, entryEndDateValue);
       if (!validateEntryInterval(entryStartDateValue, startTime, entryEndDateValue, time)) return;
       const newRecord = {
         startTime: localDateTime(entryStartDateValue, startTime),
@@ -12143,7 +12165,7 @@
         firstEndTime = formatTime(splitBoundary);
         firstEndDate = formatDateKey(splitBoundary);
       }
-      const startTime = resolveEntryStartTime(targetDate, firstEndTime);
+      const startTime = resolveEntryStartTime(targetDate, firstEndTime, firstEndDate);
       if (!validateEntryInterval(entryStartDateValue, startTime, firstEndDate, firstEndTime)) return;
 
       if (split.isSplit) {
@@ -12308,6 +12330,7 @@
       minimum: entryStartDateValue,
       onSelect: (value) => {
         setEntryDateRange(entryStartDateValue, value);
+        refreshEntryStartTime();
       }
     }));
 
@@ -12556,9 +12579,28 @@
     }, true);
 
     document.addEventListener("pointerdown", (event) => {
+      editOutsidePointer = null;
       if (editingRecordIndex === null) return;
       if (event.target.closest(".edit-panel, .time-picker, .date-picker, .time-picker-overlay")) return;
+      editOutsidePointer = {
+        id: event.pointerId,
+        x: event.clientX,
+        y: event.clientY
+      };
+    });
+
+    document.addEventListener("pointerup", (event) => {
+      if (!editOutsidePointer || editingRecordIndex === null) return;
+      if (event.pointerId !== editOutsidePointer.id) return;
+      const moved = Math.hypot(event.clientX - editOutsidePointer.x, event.clientY - editOutsidePointer.y);
+      editOutsidePointer = null;
+      if (moved > 10) return;
+      if (event.target.closest(".edit-panel, .time-picker, .date-picker, .time-picker-overlay")) return;
       cancelEditingRecord();
+    });
+
+    document.addEventListener("pointercancel", () => {
+      editOutsidePointer = null;
     });
 
     document.addEventListener("click", (event) => {
