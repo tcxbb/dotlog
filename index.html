@@ -2934,8 +2934,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
-    const APP_VERSION = "v1.6.1";
-    const APP_BUILD_TIME = "2026-07-15 12:00";
+    const APP_VERSION = "v1.6.2";
+    const APP_BUILD_TIME = "2026-07-15 12:20";
     const MIN_READER_VERSION = "v1.4.20";
 
     const entryForm = document.querySelector("#entryForm");
@@ -11558,8 +11558,6 @@
     }
 
     function triggerCalendarImport(category, events, actions) {
-      importedCalendarCategories.add(calendarImportKey(category));
-      renderImportedCalendarActions(category, events, actions);
       navigateToCalendarImport(events);
     }
 
