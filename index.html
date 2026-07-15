@@ -2024,11 +2024,15 @@
     }
 
     .calendar-import-button {
+      display: inline-flex;
+      align-items: center;
       border: 1px solid currentColor;
       border-radius: 6px;
       background: transparent;
       padding: 5px 9px;
       cursor: pointer;
+      line-height: 1.2;
+      text-decoration: none;
       white-space: nowrap;
     }
 
@@ -2934,8 +2938,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
-    const APP_VERSION = "v1.6.2";
-    const APP_BUILD_TIME = "2026-07-15 12:20";
+    const APP_VERSION = "v1.6.3";
+    const APP_BUILD_TIME = "2026-07-15 12:45";
     const MIN_READER_VERSION = "v1.4.20";
 
     const entryForm = document.querySelector("#entryForm");
@@ -3080,7 +3084,6 @@
     let syncTimer = null;
     let syncInProgress = false;
     let schemaV1BackupReady = false;
-    const importedCalendarCategories = new Set();
     let syncStatus = {
       state: "unconfigured",
       message: "未配置",
@@ -11405,6 +11408,7 @@
       return [
         "BEGIN:VCALENDAR",
         "VERSION:2.0",
+        "METHOD:PUBLISH",
         "PRODID:-//时间打点器//CN",
         "CALSCALE:GREGORIAN",
         ...events,
@@ -11530,35 +11534,27 @@
       calendarImportPanel.replaceChildren();
     }
 
-    function calendarImportKey(category) {
-      return `${formatDateKey(viewedDate)}::${category}`;
+    function sanitizeFilePart(value) {
+      return String(value || "calendar")
+        .trim()
+        .replace(/[\\/:*?"<>|]/g, "_")
+        .replace(/\s+/g, "_")
+        || "calendar";
     }
 
-    function navigateToCalendarImport(events) {
+    function calendarImportHref(events) {
       const icsContent = buildIcsContent(events);
-      const dataUri = `data:text/calendar;charset=utf-8,${encodeURIComponent(icsContent)}`;
-      window.location.href = dataUri;
+      return `data:text/calendar;charset=utf-8,${encodeURIComponent(icsContent)}`;
     }
 
-    function renderImportedCalendarActions(category, events, actions) {
-      const status = document.createElement("span");
-      status.className = "calendar-import-status";
-      status.textContent = "✓ 已导入";
-
-      const retryButton = document.createElement("button");
-      retryButton.className = "calendar-import-button";
-      retryButton.type = "button";
-      retryButton.style.color = categoryColor(category);
-      retryButton.textContent = "重新导入";
-      retryButton.addEventListener("click", () => {
-        navigateToCalendarImport(events);
-      });
-
-      actions.replaceChildren(status, retryButton);
-    }
-
-    function triggerCalendarImport(category, events, actions) {
-      navigateToCalendarImport(events);
+    function createCalendarImportLink(category, events) {
+      const link = document.createElement("a");
+      link.className = "calendar-import-button";
+      link.href = calendarImportHref(events);
+      link.download = `Dotlog_${formatDateKey(viewedDate)}_${sanitizeFilePart(category)}.ics`;
+      link.style.color = categoryColor(category);
+      link.textContent = "→ 导入";
+      return link;
     }
 
     function renderCalendarImportPanel(eventsByCategory) {
@@ -11605,19 +11601,7 @@
         const importActions = document.createElement("div");
         importActions.className = "calendar-import-actions";
 
-        if (importedCalendarCategories.has(calendarImportKey(category))) {
-          renderImportedCalendarActions(category, events, importActions);
-        } else {
-          const importButton = document.createElement("button");
-          importButton.className = "calendar-import-button";
-          importButton.type = "button";
-          importButton.style.color = categoryColor(category);
-          importButton.textContent = "→ 导入";
-          importButton.addEventListener("click", () => {
-            triggerCalendarImport(category, events, importActions);
-          });
-          importActions.append(importButton);
-        }
+        importActions.append(createCalendarImportLink(category, events));
 
         row.append(categoryCell, count, importActions);
         list.append(row);
