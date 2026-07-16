@@ -1085,6 +1085,13 @@
       cursor: pointer;
     }
 
+    .record-category.is-uncategorized {
+      color: var(--muted);
+      background: #f0f0f0;
+      border-radius: 4px;
+      padding: 1px 5px;
+    }
+
     .record-category:active {
       opacity: 0.7;
     }
@@ -2934,8 +2941,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
-    const APP_VERSION = "v1.6.7";
-    const APP_BUILD_TIME = "2026-07-15 14:20";
+    const APP_VERSION = "v1.6.8";
+    const APP_BUILD_TIME = "2026-07-16 13:10";
     const MIN_READER_VERSION = "v1.4.20";
 
     const entryForm = document.querySelector("#entryForm");
@@ -8938,13 +8945,16 @@
           const subRow = document.createElement("div");
           subRow.className = "record-sub";
 
-          if (displayCategory) {
+          const shouldShowCategorySlot = Boolean(displayCategory) || canEditRecord;
+          if (shouldShowCategorySlot) {
+            const categoryText = displayCategory || "未分类";
             if (canEditRecord) {
               const category = document.createElement("button");
               category.className = "record-category";
+              category.classList.toggle("is-uncategorized", !displayCategory);
               category.type = "button";
               category.style.color = displayColor || "var(--muted)";
-              category.textContent = displayCategory;
+              category.textContent = categoryText;
               category.addEventListener("click", () => {
                 openCategorySelection(index, record);
               });
@@ -8953,7 +8963,7 @@
               const category = document.createElement("span");
               category.className = "record-category";
               category.style.color = displayColor || "var(--muted)";
-              category.textContent = displayCategory;
+              category.textContent = categoryText;
               subRow.append(category);
             }
           }
@@ -8961,7 +8971,7 @@
           const duration = document.createElement("span");
           duration.className = "record-duration";
           duration.classList.toggle("is-invalid", Boolean(interval?.isInvalid));
-          duration.textContent = displayCategory ? ` · ${durationText}` : durationText;
+          duration.textContent = shouldShowCategorySlot ? ` · ${durationText}` : durationText;
           subRow.append(duration);
 
           body.append(mainRow, subRow);
