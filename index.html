@@ -2941,8 +2941,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
-    const APP_VERSION = "v1.6.8";
-    const APP_BUILD_TIME = "2026-07-16 13:10";
+    const APP_VERSION = "v1.6.9";
+    const APP_BUILD_TIME = "2026-08-28 22:20";
     const MIN_READER_VERSION = "v1.4.20";
 
     const entryForm = document.querySelector("#entryForm");
@@ -6749,6 +6749,101 @@
       exportStatusTimer = setTimeout(() => {
         exportStatus.textContent = "";
       }, 2000);
+    }
+
+    function isDotlogLocalStorageKey(key) {
+      return key === "category_config"
+        || key === "gist_token"
+        || key === "gist_id"
+        || key.startsWith("dotlog_")
+        || key.startsWith("time_tracker_")
+        || key.startsWith("backup_before_");
+    }
+
+    function formatLocalStorageBackupTimestamp(date = new Date()) {
+      const pad = (value) => String(value).padStart(2, "0");
+      return [
+        date.getFullYear(),
+        pad(date.getMonth() + 1),
+        pad(date.getDate())
+      ].join("-") + "_" + [
+        pad(date.getHours()),
+        pad(date.getMinutes()),
+        pad(date.getSeconds())
+      ].join("-");
+    }
+
+    function collectLocalStorageBackupPayload(now = new Date()) {
+      const keys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
+        .filter(Boolean)
+        .filter(isDotlogLocalStorageKey)
+        .sort();
+
+      return {
+        exportedAt: now.toISOString(),
+        href: location.href,
+        keyCount: keys.length,
+        items: keys.map((key) => ({
+          key,
+          value: localStorage.getItem(key)
+        }))
+      };
+    }
+
+    function canShareLocalStorageBackupFile(file) {
+      try {
+        return Boolean(
+          navigator.canShare
+          && navigator.canShare({ files: [file] })
+          && navigator.share
+        );
+      } catch {
+        return false;
+      }
+    }
+
+    function isStandalonePwa() {
+      return Boolean(
+        window.navigator.standalone
+        || window.matchMedia?.("(display-mode: standalone)").matches
+      );
+    }
+
+    function downloadLocalStorageBackup(blob, filename) {
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = filename;
+      link.rel = "noopener";
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    }
+
+    async function exportLocalStorageBackup() {
+      const now = new Date();
+      const payload = collectLocalStorageBackupPayload(now);
+      const filename = `dotlog_localStorage_backup_${formatLocalStorageBackupTimestamp(now)}.json`;
+      const json = JSON.stringify(payload, null, 2);
+      const blob = new Blob([json], { type: "application/json;charset=utf-8" });
+      const file = new File([blob], filename, { type: "application/json" });
+
+      if (isStandalonePwa() && canShareLocalStorageBackupFile(file)) {
+        try {
+          await navigator.share({
+            files: [file],
+            title: "Dotlog localStorage 备份",
+            text: "保存 Dotlog 本机备份 JSON"
+          });
+          showExportStatus("已打开分享");
+          return;
+        } catch (error) {
+          if (error?.name === "AbortError") return;
+        }
+      }
+
+      downloadLocalStorageBackup(blob, filename);
+      showExportStatus("已导出本机备份");
     }
 
     function getGistSettings() {
@@ -11191,6 +11286,11 @@
       saveButton.type = "button";
       saveButton.textContent = "保存并同步";
 
+      const backupButton = document.createElement("button");
+      backupButton.className = "outline-button";
+      backupButton.type = "button";
+      backupButton.textContent = "导出本机 localStorage 备份";
+
       function saveSyncInputs() {
         localStorage.setItem("gist_token", tokenInput.value.trim());
         localStorage.setItem("gist_id", gistInput.value.trim());
@@ -11211,7 +11311,9 @@
         });
       });
 
-      actions.append(testButton, saveButton);
+      backupButton.addEventListener("click", exportLocalStorageBackup);
+
+      actions.append(testButton, saveButton, backupButton);
 
       const statusRow = document.createElement("div");
       statusRow.className = "sync-status-row";
